@@ -35,7 +35,7 @@ class SpaceViewport(gl.GLViewWidget):
         self._rocket_key = None; self.system = None
         self.trail = gl.GLLinePlotItem(color=(1, .85, .1, 1), width=2, antialias=True); self.addItem(self.trail)
         self.axes = gl.GLAxisItem(); self.addItem(self.axes)
-        self.grid = gl.GLGridItem(); self.grid.setSize(2e8, 2e8); self.grid.setSpacing(1e7, 1e7); self.addItem(self.grid)
+        self.grid = gl.GLGridItem(); self.grid.setSpacing(5, 5); self.grid.setSize(60, 60); self.addItem(self.grid)
         for name, col in (("v", (.2, 1, .4, 1)), ("a", (1, 1, .2, 1)), ("g", (1, .3, .3, 1))):
             it = gl.GLLinePlotItem(color=col, width=3, antialias=True); self.addItem(it); self.vec_items[name] = it
         self.overlay_text = ""
