@@ -24,92 +24,20 @@
 
 ## 🌌 Overview
 
-**Astra-X** is a **professional-grade space flight simulator and mission architecture suite**.  
-It is designed as a **simulation laboratory**, not a game.
+**AstraX** is an open-source spaceflight simulation laboratory: design rockets (stages, boosters, engines, fins, legs or your own OBJ model), edit planets, fly missions with real N-body gravity, and analyse telemetry.
 
-With Astra-X, you can:
+> ⚠️ Results are **not validated mission predictions**. See [`docs/PHYSICS.md`](docs/PHYSICS.md) for assumptions, tests and limitations.
 
-- 🛰 Design rockets from physical parameters  
-- 🧠 Write **real Python flight software**
-- 🌍 Navigate a full-scale **3D solar system**
-- 🪐 Simulate **true N-Body gravity**
-- 📡 Analyze telemetry like a real mission control
+### Features
+- **Physics (headless, tested):** N-body gravity, Keplerian elements, RK4 / adaptive Dormand-Prince / velocity Verlet, variable-mass rocket equation, pressure-dependent thrust, atmospheric drag, multi-stage + strap-on boosters, surface contact, flight-plan guidance (gravity turn, closed-loop insertion, prograde/retrograde burns).
+- **Rocket designer:** live procedural 3D rocket, custom stage stacks, OBJ import/export, estimated delta-v / T/W / CoM / CoP / inertia (clearly labelled *estimates*).
+- **Planet inspector:** editable mass, radius, rotation, tilt, orbital elements; per-body reset; sources and limitations shown.
+- **Time controls:** 0.1x - 1000x + custom; separate timestep; stability warnings; honest "achieved vs requested" speed.
+- **Telemetry & analysis:** selectable graphs with units, run comparison, trajectory and travel-to-Sun/planet analysis, CSV / JSON session / Markdown report export.
+- **Logs & recording:** rotating run logs, event log, GIF/MP4 viewport recording, PNG snapshots.
+- **Flight computer:** original Python `mission_loop()` API preserved.
 
-> Ideal for **students, researchers, engineers, educators, and space enthusiasts**.
-
----
-
-## ✨ Core Features
-
-### 🪐 Real Solar System Physics
-- True **N-Body gravitational simulation**
-- Sun, Earth, Moon, Mars, Jupiter
-- No fake rails or scripted orbits
-
-### 💻 Live Flight Computer
-- Write real-time **Python guidance code**
-- Control thrust, pitch, staging & autonomy
-- Fully sandboxed runtime
-
-### 📐 Rocket Design Lab
-- Dry mass & fuel modeling
-- Engine thrust tuning
-- Mass-dependent dynamics
-
-### 📊 Mission Telemetry HUD
-- Velocity vectors
-- Altitude & orbital parameters
-- Trajectory prediction
-
-### 🎥 High-Fidelity 3D Rendering
-- OpenGL-accelerated viewport
-- Dynamic camera tracking
-- Planet textures & orbital paths
-
-### 🛬 Landing & Crash Physics
-- Collision detection
-- Soft-landing logic
-- Mission success evaluation
-
----
-
-## 🖼 Preview Gallery
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/arshc0der/ASTRA-X-UNIVERSE-SIMULATOR/refs/heads/main/Testing/preview/1.png" width="90%" />
-</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/arshc0der/ASTRA-X-UNIVERSE-SIMULATOR/refs/heads/main/Testing/preview/2.png" width="90%" />
-</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/arshc0der/ASTRA-X-UNIVERSE-SIMULATOR/refs/heads/main/Testing/preview/3.png" width="90%" />
-</p>
-
----
-
-## 🧠 Technology Stack
-
-| Layer        | Technology                    |
-|-------------|--------------------------------|
-| Language    | Python 3.10+                   |
-| GUI         | PyQt6                          |
-| Rendering   | OpenGL + PyQtGraph             |
-| Physics     | NumPy (Vectorized N-Body math) |
-| Assets      | Pillow                         |
-| Architecture| Modular & sandboxed runtime    |
-
----
-
-## ⚠️ Before Running
-
-> **IMPORTANT:**  
-Remove the following folder before launching:
-
-```text
-Remove: Testing
-````
+See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md). Example output: [`docs/examples/`](docs/examples/).
 
 ---
 
@@ -191,21 +119,24 @@ def mission_loop():
 
 ---
 
+## 🧪 Tests
+
+```bash
+python -m unittest discover -s tests -v
+```
+
 ## 📂 Project Structure
 
 ```text
-AstraX_Sim/
-├── main.py
-├── core/
-│   ├── physics.py
-│   ├── runtime.py
-│   └── mission_result.py
-├── ui/
-│   ├── window.py
-│   ├── viewport.py
-│   └── designer.py
-└── assets/
-    └── theme.py
+AstraX/
+├── main.py                 # PyQt6 entry point
+├── astrax/                 # headless engine - no Qt/OpenGL imports
+│   ├── simulation.py  bodies.py  orbital.py  integrators.py  atmosphere.py
+│   ├── rocket.py  rocket_mesh.py  missions.py  runtime.py  recorder.py  project.py
+├── ui/                     # PyQt6 interface
+├── tests/                  # unit + integration tests
+├── docs/                   # PHYSICS.md, USER_GUIDE.md, examples/
+└── legacy/core/            # original engine, kept for reference
 ```
 
 ---
@@ -229,7 +160,7 @@ If you like Astra-X, please ⭐ **star the repo** — it helps a lot!
 python -m PyInstaller --noconsole --onefile \
 --name="AstraX" \
 --icon="assets/logo.png" \
---add-data "assets;assets" \
+--add-data "assets;assets" --collect-all pyqtgraph \
 --version-file="version_info.txt" \
 main.py
 ```
