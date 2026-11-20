@@ -160,19 +160,21 @@ class SolarSystem:
         mu = parent.gm + (b.gm if b.parent else 0.0)
         return 2 * math.pi * math.sqrt(b.a ** 3 / mu)
 
-    def initial_state(self):
-        """Return (positions Nx3, velocities Nx3) in a barycentric ecliptic-J2000 frame."""
+    def initial_state(self, t0_s: float = 0.0):
+        """Return (positions Nx3, velocities Nx3) in a barycentric ecliptic-J2000 frame at t0_s seconds after J2000
+        (mean anomalies are advanced with the two-body mean motion - not a perturbed ephemeris)."""
+        adv = lambda b, mu: (b.m0 + math.degrees(math.sqrt(mu / b.a ** 3) * t0_s)) % 360.0 if b.a > 0 else b.m0
         n = len(self.bodies)
         pos = np.zeros((n, 3)); vel = np.zeros((n, 3))
         sun = self.bodies[0]
         for i, b in enumerate(self.bodies):
             if b.parent is None and b.a > 0:
                 mu = sun.gm + (self.get("Moon").gm + b.gm if b.name == "Earth" else b.gm)
-                pos[i], vel[i] = elements_to_state(b.a, b.e, b.inc, b.raan, b.argp, b.m0, mu)
+                pos[i], vel[i] = elements_to_state(b.a, b.e, b.inc, b.raan, b.argp, adv(b, mu), mu)
         moon = self.get("Moon"); earth = self.get("Earth")
         im, ie = self.index("Moon"), self.index("Earth")
         emb_p, emb_v = pos[ie].copy(), vel[ie].copy()
-        rp, rv = elements_to_state(moon.a, moon.e, moon.inc, moon.raan, moon.argp, moon.m0,
+        rp, rv = elements_to_state(moon.a, moon.e, moon.inc, moon.raan, moon.argp, adv(moon, earth.gm + moon.gm),
                                    earth.gm + moon.gm)
         mt = earth.gm + moon.gm
         pos[ie] = emb_p - rp * moon.gm / mt; vel[ie] = emb_v - rv * moon.gm / mt

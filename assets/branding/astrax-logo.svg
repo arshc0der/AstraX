@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-label="AstraX logo">
+<title>AstraX</title>
+
+<defs>
+  <radialGradient id="bg" cx="50%" cy="40%" r="75%">
+    <stop offset="0" stop-color="#10264d"/><stop offset="0.45" stop-color="#0b1424"/><stop offset="1" stop-color="#05080d"/>
+  </radialGradient>
+  <radialGradient id="neb1" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#2aa9ff" stop-opacity="0.22"/><stop offset="1" stop-color="#2aa9ff" stop-opacity="0"/></radialGradient>
+  <radialGradient id="neb2" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ff7a2a" stop-opacity="0.10"/><stop offset="1" stop-color="#ff7a2a" stop-opacity="0"/></radialGradient>
+  <radialGradient id="neb3" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#6a4cff" stop-opacity="0.12"/><stop offset="1" stop-color="#6a4cff" stop-opacity="0"/></radialGradient>
+
+  <linearGradient id="silL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="0.6" stop-color="#c3cfdc"/><stop offset="1" stop-color="#8e9db0"/></linearGradient>
+  <linearGradient id="silR" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9e2ec"/><stop offset="0.6" stop-color="#8998ab"/><stop offset="1" stop-color="#5d6a7c"/></linearGradient>
+  <linearGradient id="bluL" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#7fe0ff"/><stop offset="0.55" stop-color="#2aa9ff"/><stop offset="1" stop-color="#1857ff"/></linearGradient>
+  <linearGradient id="bluR" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#2aa9ff"/><stop offset="0.6" stop-color="#1557e8"/><stop offset="1" stop-color="#0a2b9c"/></linearGradient>
+
+  <linearGradient id="ringG" gradientUnits="userSpaceOnUse" x1="-345" y1="0" x2="345" y2="0">
+    <stop offset="0" stop-color="#2aa9ff" stop-opacity="0.15"/><stop offset="0.25" stop-color="#2aa9ff"/>
+    <stop offset="0.5" stop-color="#e9f8ff"/><stop offset="0.75" stop-color="#2aa9ff"/><stop offset="1" stop-color="#2aa9ff" stop-opacity="0.15"/>
+  </linearGradient>
+  <linearGradient id="flameG" gradientUnits="userSpaceOnUse" x1="0" y1="585" x2="0" y2="670">
+    <stop offset="0" stop-color="#fff3c4"/><stop offset="0.35" stop-color="#ffb347"/><stop offset="0.7" stop-color="#ff7a2a"/><stop offset="1" stop-color="#ff7a2a" stop-opacity="0"/>
+  </linearGradient>
+  <radialGradient id="orbG" cx="38%" cy="35%" r="70%"><stop offset="0" stop-color="#ffffff"/><stop offset="0.4" stop-color="#9fe6ff"/><stop offset="1" stop-color="#1c7bff"/></radialGradient>
+  <radialGradient id="haloG"><stop offset="0" stop-color="#7fe0ff" stop-opacity="0.9"/><stop offset="1" stop-color="#7fe0ff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="txtG" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#9db0c6"/></linearGradient>
+  <linearGradient id="txtX" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#8fe3ff"/><stop offset="0.6" stop-color="#2aa9ff"/><stop offset="1" stop-color="#1857ff"/></linearGradient>
+  <linearGradient id="lineL" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2aa9ff" stop-opacity="0"/><stop offset="1" stop-color="#2aa9ff" stop-opacity="0.9"/></linearGradient>
+  <linearGradient id="lineR" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2aa9ff" stop-opacity="0.9"/><stop offset="1" stop-color="#2aa9ff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="sheenG" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="0.5" stop-color="#fff" stop-opacity="0.85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  <linearGradient id="shootG" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#bfe9ff" stop-opacity="0"/><stop offset="1" stop-color="#ffffff"/></linearGradient>
+
+  <filter id="blur16" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="16"/></filter>
+  <filter id="blur6" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6"/></filter>
+  <filter id="blur3" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3"/></filter>
+
+  <g id="glyphs">
+    <polygon points="640,130 508,340 564,340 640,215"/><polygon points="640,130 772,340 716,340 640,215"/><polygon points="508,380 564,380 640,495 640,590"/><polygon points="772,380 716,380 640,495 640,590"/>
+  </g>
+  <clipPath id="glyphClip">
+    <polygon points="640,130 508,340 564,340 640,215"/><polygon points="640,130 772,340 716,340 640,215"/><polygon points="508,380 564,380 640,495 640,590"/><polygon points="772,380 716,380 640,495 640,590"/>
+  </clipPath>
+</defs>
+
+<g opacity="0.9">
+  
+  <g><circle cx="640" cy="360" r="292" fill="none" stroke="#2aa9ff" stroke-opacity="0.38" stroke-width="9" stroke-dasharray="1.4 13.5"/></g>
+  <circle cx="640" cy="360" r="270" fill="none" stroke="#2aa9ff" stroke-opacity="0.16" stroke-width="1.2"/>
+  <g>
+    <circle cx="640" cy="360" r="312" fill="none" stroke="#bfe9ff" stroke-opacity="0.55" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="70 1890"/>
+    <circle cx="640" cy="360" r="312" fill="none" stroke="#ff7a2a" stroke-opacity="0.8" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="26 1934" stroke-dashoffset="-980"/>
+  </g>
+</g>
+
+<g id="emblem" transform="translate(640,240) scale(0.82) translate(-640,-330)">
+  <!-- glow behind glyphs -->
+  <g filter="url(#blur16)" fill="#2aa9ff" opacity="0.6"><use href="#glyphs"/></g>
+
+  <!-- back half of orbit + satellite -->
+  <g transform="translate(640,360) rotate(-24)"><path d="M -345 0 A 345 86 0 0 1 345 0" fill="none" stroke="#2aa9ff" stroke-width="16" opacity="0.18" filter="url(#blur6)"></path><path d="M -345 0 A 345 86 0 0 1 345 0" fill="none" stroke="url(#ringG)" stroke-width="7" stroke-linecap="round" opacity="0.5"></path></g>
+
+  <!-- X: Λ (silver) over V (blue thrust) -->
+  <g>
+    <polygon points="640,130 508,340 564,340 640,215" fill="url(#silL)"/>
+    <polygon points="640,130 772,340 716,340 640,215" fill="url(#silR)"/>
+    <polyline points="508,340 640,130 772,340" fill="none" stroke="#ffffff" stroke-opacity="0.75" stroke-width="1.6" stroke-linejoin="round"/>
+    <line x1="640" y1="130" x2="640" y2="215" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1"/>
+  </g>
+  <g>
+    <polygon points="508,380 564,380 640,495 640,590" fill="url(#bluL)"/>
+    <polygon points="772,380 716,380 640,495 640,590" fill="url(#bluR)"/>
+    <polyline points="508,380 640,590 772,380" fill="none" stroke="#bff0ff" stroke-opacity="0.7" stroke-width="1.6" stroke-linejoin="round"/>
+    <line x1="640" y1="495" x2="640" y2="590" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1"/>
+  </g>
+  <path d="M 624 588 C 630 622, 638 650, 640 668 C 642 650, 650 622, 656 588 Z" fill="url(#flameG)" filter="url(#blur3)"/>
+    <path d="M 632 590 C 636 612, 639 626, 640 636 C 641 626, 644 612, 648 590 Z" fill="#fffbe6" opacity="0.95"/>
+
+  <!-- glowing horizon between the two halves -->
+  <g>
+    <rect x="520" y="358" width="240" height="4" rx="2" fill="#bfe9ff" opacity="0.8" filter="url(#blur3)"/>
+    <rect x="560" y="359.4" width="160" height="1.2" fill="#ffffff"/>
+  </g>
+
+  <!-- orb (sun) in the counter of the A -->
+  <g transform="translate(640,300)"><g>
+    <circle r="34" fill="url(#haloG)" opacity="0.8"></circle>
+    <circle r="15" fill="url(#orbG)"/>
+  </g></g>
+  <g transform="translate(640,300)"><path d="M0 -46 L5 -5 L46 0 L5 5 L0 46 L-5 5 L-46 0 L-5 -5 Z" fill="#dff6ff" opacity="0.9"/></g>
+
+  
+
+  <!-- front half of orbit + satellite -->
+  <g transform="translate(640,360) rotate(-24)"><path d="M 345 0 A 345 86 0 0 1 -345 0" fill="none" stroke="#2aa9ff" stroke-width="16" opacity="0.35" filter="url(#blur6)"></path><path d="M 345 0 A 345 86 0 0 1 -345 0" fill="none" stroke="url(#ringG)" stroke-width="7" stroke-linecap="round" opacity="1"></path><path d="M 345 0 A 345 86 0 0 1 -345 0" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-opacity="0.8" transform="translate(0,-2)"></path><g transform="translate(213.9,67.1)"><circle r="22" fill="url(#haloG)"/><circle r="6.5" fill="#ffffff"/><circle r="3" fill="#aeeaff"/></g></g>
+  
+</g>
+<g id="wordmark"><g><path transform="translate(419.43,602) scale(0.04102,-0.04102)" d="M47 0H439L536 317H1032L1133 0H1529L1017 1490H544ZM619 587 639 651C688 820 732 1008 777 1209C825 1009 874 821 926 651L946 587Z" fill="url(#txtG)"/></g><g><path transform="translate(500.07,602) scale(0.04102,-0.04102)" d="M691 -20C1060 -20 1280 149 1280 432C1280 670 1113 814 825 877L696 907C563 937 476 981 476 1073C476 1156 549 1217 690 1217C832 1217 911 1154 921 1046H1260C1256 1322 1036 1510 691 1510C353 1510 111 1325 111 1049C111 825 267 696 524 637L682 600C845 563 923 518 923 433C923 338 833 273 687 273C526 273 419 347 411 492H72C78 148 318 -20 691 -20Z" fill="url(#txtG)"/></g><g><path transform="translate(571.52,602) scale(0.04102,-0.04102)" d="M66 1202H517V0H869V1202H1320V1490H66Z" fill="url(#txtG)"/></g><g><path transform="translate(644.37,602) scale(0.04102,-0.04102)" d="M116 0H469V513H661L934 0H1321L1010 569C1175 643 1269 789 1269 995C1269 1299 1062 1490 726 1490H116ZM469 792V1204H651C817 1204 903 1134 903 995C903 856 817 792 652 792Z" fill="url(#txtG)"/></g><g><path transform="translate(715.99,602) scale(0.04102,-0.04102)" d="M47 0H439L536 317H1032L1133 0H1529L1017 1490H544ZM619 587 639 651C688 820 732 1008 777 1209C825 1009 874 821 926 651L946 587Z" fill="url(#txtG)"/></g><g><path transform="translate(796.63,602) scale(0.04102,-0.04102)" d="M49 0H458L651 285C720 388 745 444 779 509C813 444 839 388 905 285L1091 0H1510L984 772L1459 1490H1061L916 1267C854 1169 819 1089 784 1013C749 1089 715 1169 653 1267L511 1490H102L585 762Z" fill="url(#txtX)"/></g></g>
+<g id="tagline"><g fill="#8fa2b8"><path transform="translate(423.17,660) scale(0.00830,-0.00830)" d="M665 -25C1015 -25 1217 159 1217 412C1217 681 978 783 788 832L643 870C529 900 375 953 375 1094C375 1220 489 1312 670 1312C839 1312 960 1234 975 1098H1197C1190 1335 981 1510 675 1510C375 1510 147 1339 147 1081C147 877 291 752 535 687L709 639C869 596 992 545 992 415C992 271 853 175 664 175C492 175 348 251 335 414H106C120 142 330 -25 665 -25Z"/><path transform="translate(443.65,660) scale(0.00830,-0.00830)" d="M786 -20C1172 -20 1457 268 1457 744C1457 1222 1172 1510 786 1510C399 1510 113 1222 113 744C113 268 399 -20 786 -20ZM786 188C530 188 339 384 339 744C339 1105 530 1302 786 1302C1040 1302 1231 1106 1231 744C1231 384 1040 188 786 188Z"/><path transform="translate(466.18,660) scale(0.00830,-0.00830)" d="M165 0H1068V196H393V1490H165Z"/><path transform="translate(485.29,660) scale(0.00830,-0.00830)" d="M51 0H298L431 393H1017L1154 0H1401L861 1490H581ZM496 583 579 829C616 943 662 1098 720 1311C779 1100 824 948 864 829L950 583Z"/><path transform="translate(506.85,660) scale(0.00830,-0.00830)" d="M165 0H393V563H697C701 563 706 563 710 563L1012 0H1271L943 602C1124 670 1215 822 1215 1022C1215 1297 1044 1490 699 1490H165ZM393 758V1295H673C893 1295 984 1190 984 1022C984 855 893 758 675 758Z"/><path transform="translate(541.39,660) scale(0.00830,-0.00830)" d="M665 -25C1015 -25 1217 159 1217 412C1217 681 978 783 788 832L643 870C529 900 375 953 375 1094C375 1220 489 1312 670 1312C839 1312 960 1234 975 1098H1197C1190 1335 981 1510 675 1510C375 1510 147 1339 147 1081C147 877 291 752 535 687L709 639C869 596 992 545 992 415C992 271 853 175 664 175C492 175 348 251 335 414H106C120 142 330 -25 665 -25Z"/><path transform="translate(561.88,660) scale(0.00830,-0.00830)" d="M600 0H828V593L1375 1490H1110L833 1015C789 940 753 873 716 783C679 871 643 937 597 1015L317 1490H51L600 593Z"/><path transform="translate(583.21,660) scale(0.00830,-0.00830)" d="M665 -25C1015 -25 1217 159 1217 412C1217 681 978 783 788 832L643 870C529 900 375 953 375 1094C375 1220 489 1312 670 1312C839 1312 960 1234 975 1098H1197C1190 1335 981 1510 675 1510C375 1510 147 1339 147 1081C147 877 291 752 535 687L709 639C869 596 992 545 992 415C992 271 853 175 664 175C492 175 348 251 335 414H106C120 142 330 -25 665 -25Z"/><path transform="translate(603.69,660) scale(0.00830,-0.00830)" d="M90 1294H555V0H784V1294H1247V1490H90Z"/><path transform="translate(624.29,660) scale(0.00830,-0.00830)" d="M165 0H1109V196H393V655H1053V850H393V1294H1103V1490H165Z"/><path transform="translate(644.04,660) scale(0.00830,-0.00830)" d="M165 0H387V802C387 916 382 1107 378 1263C435 1079 494 892 528 802L837 0H1032L1337 802C1371 895 1433 1087 1486 1268C1483 1102 1478 912 1478 802V0H1705V1490H1367L1047 635C1018 553 971 387 936 254C902 390 855 555 826 635L501 1490H165Z"/><path transform="translate(683.09,660) scale(0.00830,-0.00830)" d="M51 0H298L431 393H1017L1154 0H1401L861 1490H581ZM496 583 579 829C616 943 662 1098 720 1311C779 1100 824 948 864 829L950 583Z"/><path transform="translate(704.64,660) scale(0.00830,-0.00830)" d="M165 0H393V563H697C701 563 706 563 710 563L1012 0H1271L943 602C1124 670 1215 822 1215 1022C1215 1297 1044 1490 699 1490H165ZM393 758V1295H673C893 1295 984 1190 984 1022C984 855 893 758 675 758Z"/><path transform="translate(725.16,660) scale(0.00830,-0.00830)" d="M784 -20C1113 -20 1353 188 1399 483H1169C1131 293 972 188 786 188C531 188 339 382 339 744C339 1104 530 1302 786 1302C972 1302 1131 1198 1169 1008H1398C1348 1324 1098 1510 784 1510C398 1510 113 1222 113 744C113 268 397 -20 784 -20Z"/><path transform="translate(747.13,660) scale(0.00830,-0.00830)" d="M165 0H393V664H1131V0H1360V1490H1131V860H393V1490H165Z"/><path transform="translate(769.29,660) scale(0.00830,-0.00830)" d="M393 1490H165V0H393Z"/><path transform="translate(783.42,660) scale(0.00830,-0.00830)" d="M90 1294H555V0H784V1294H1247V1490H90Z"/><path transform="translate(804.02,660) scale(0.00830,-0.00830)" d="M165 0H1109V196H393V655H1053V850H393V1294H1103V1490H165Z"/><path transform="translate(823.77,660) scale(0.00830,-0.00830)" d="M784 -20C1113 -20 1353 188 1399 483H1169C1131 293 972 188 786 188C531 188 339 382 339 744C339 1104 530 1302 786 1302C972 1302 1131 1198 1169 1008H1398C1348 1324 1098 1510 784 1510C398 1510 113 1222 113 744C113 268 397 -20 784 -20Z"/><path transform="translate(845.73,660) scale(0.00830,-0.00830)" d="M90 1294H555V0H784V1294H1247V1490H90Z"/></g><rect x="285.2" y="654.5" width="110" height="1.5" fill="url(#lineL)"/><rect x="884.8" y="654.5" width="110" height="1.5" fill="url(#lineR)"/></g>
+
+</svg>

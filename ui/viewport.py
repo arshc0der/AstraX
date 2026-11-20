@@ -49,6 +49,10 @@ class SpaceViewport(gl.GLViewWidget):
         self.pred_pts = None; self.pred_body = None; self.capsule_item = None; self.pad_item = None; self.show_plume = True; self.rocket_radius_km = 0.002
         self.banner_events = []
 
+    def set_space_background(self, hex_color: str):
+        """Viewport clear colour (the theme background on dark themes)."""
+        self.setBackgroundColor(QColor(hex_color))
+
     # ---------------- setup ----------------
     def init_bodies(self, system):
         for d in (self.body_items, self.label_items, self.orbit_items, self.atm_items):

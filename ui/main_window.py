@@ -3,7 +3,7 @@ import os, copy, logging, datetime
 from PyQt6.QtCore import Qt, QSettings, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QDesktopServices
 from PyQt6.QtCore import QUrl
-from PyQt6.QtWidgets import (QScrollArea, QFrame, QMainWindow, QDockWidget, QTabWidget, QToolBar, QComboBox, QLabel, QWidget, QVBoxLayout, QGridLayout, QDoubleSpinBox, QTreeWidget,
+from PyQt6.QtWidgets import (QApplication, QScrollArea, QFrame, QMainWindow, QDockWidget, QTabWidget, QToolBar, QComboBox, QLabel, QWidget, QVBoxLayout, QGridLayout, QDoubleSpinBox, QTreeWidget,
                              QTreeWidgetItem, QTextEdit, QFileDialog, QMessageBox, QMenu, QInputDialog)
 from astrax import __version__, project
 from astrax.bodies import SolarSystem
@@ -26,6 +26,10 @@ from ui.orbit_panel import OrbitPanel
 from ui.survival_dialog import SurvivalDialog
 from ui.extra_windows import ViewWindow, GraphWindow
 from ui.settings_dialog import SettingsDialog
+from ui.planner_panel import PlannerPanel
+from ui.studies_panel import StudiesPanel
+from ui.challenges_panel import ChallengesPanel
+from ui.theme import apply_app_theme, is_dark_theme
 from ui.theme import build_style, THEMES
 
 log = logging.getLogger("astrax")
@@ -34,7 +38,9 @@ SPEEDS = ["0.1x", "0.5x", "1x", "2x", "5x", "10x", "50x", "100x", "1000x", "Cust
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__(); self.setWindowTitle(f"AstraX {__version__} - Spaceflight Simulation Laboratory"); self.resize(1500, 900); self.setMinimumSize(900, 600); pass
+        super().__init__(); self.setWindowTitle(f"AstraX {__version__} - Spaceflight Simulation Laboratory"); self.resize(1500, 900); self.setMinimumSize(900, 600)
+        _ico = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "logo.png")
+        if os.path.exists(_ico): from PyQt6.QtGui import QIcon as _QI; self.setWindowIcon(_QI(_ico)); pass
         self.log_path = setup_logging(); self.settings = QSettings("AstraX", "AstraX2"); self.extra = []; self._dialogs = []
         self.prefs = self._load_prefs(); self.setStyleSheet(build_style(self.prefs['theme'], self.prefs['font_pt']))
         self.system = SolarSystem(); self.rocket = default_rocket(); self.cfg = SimConfig(method="rk4", dt_mode="auto")
@@ -56,17 +62,20 @@ class MainWindow(QMainWindow):
         self.explorer = QTreeWidget(); self.explorer.setHeaderHidden(True); self.explorer.itemDoubleClicked.connect(self._explorer_focus)
         self._dock("Explorer", self.explorer, Qt.DockWidgetArea.LeftDockWidgetArea)
         self.planets = PlanetInspector(self.system); self.planets.changed.connect(self._planet_changed); self.planets.selected.connect(self._planet_selected)
-        self.mission = MissionPanel([b.name for b in self.system.bodies]); self.mission.scenario_applied.connect(self._scenario_applied); self.mission.script_requested.connect(self._script)
+        self.mission = MissionPanel([b.name for b in self.system.bodies]); self.mission.scenario_applied.connect(self._scenario_applied); self.mission.script_requested.connect(self._script); self.mission.preset_loaded.connect(self._preset_loaded)
         self.rtabs = QTabWidget(); self.emergency = EmergencyPanel(lambda: self.worker, lambda: self.cfg); self.orbit = OrbitPanel(lambda: self.worker, lambda: self.rec)
+        self.planner = PlannerPanel(lambda: self.system); self.planner.fly_requested.connect(self.fly_transfer)
+        self.studies = StudiesPanel(lambda: self.designer.rocket, lambda: self.system); self.challenges = ChallengesPanel(); self.challenges.load_requested.connect(self.load_challenge)
         self.rtabs.addTab(self._scroll(self.mission), "Mission control"); self.rtabs.addTab(self._scroll(self.planets), "Planet inspector")
         self.rtabs.addTab(self._scroll(self.emergency), "Flight safety"); self.rtabs.addTab(self._scroll(self.orbit), "Orbit analysis")
+        self.rtabs.addTab(self._scroll(self.planner), "Launch windows"); self.rtabs.addTab(self._scroll(self.studies), "Studies"); self.rtabs.addTab(self._scroll(self.challenges), "Challenges")
         self.d_right = self._dock("Properties & Mission", self.rtabs, Qt.DockWidgetArea.RightDockWidgetArea); self.d_right.setMinimumWidth(320)
         self.telemetry = TelemetryPanel(); self.d_tel = self._dock("Telemetry & timeline", self._scroll(self.telemetry), Qt.DockWidgetArea.BottomDockWidgetArea); self.d_tel.setMinimumHeight(150)
         self.console = QTextEdit(); self.console.setReadOnly(True); self.d_con = self._dock("Event log", self.console, Qt.DockWidgetArea.BottomDockWidgetArea); self.tabifyDockWidget(self.d_tel, self.d_con); self.d_tel.raise_()
 
         self._build_toolbar(); self._build_menus(); self._build_statusbar()
         self.viewport.init_bodies(self.system); self.viewport.refresh_orbits(); self.viewport.set_rocket(self.rocket)
-        self.viewport.trail_len = self.prefs["trail_len"]; self.viewport.body_scale = self.prefs["body_scale"]; self.viewport.show_plume = self.prefs["plume"]
+        self._space_bg(self.prefs["theme"]); self.viewport.trail_len = self.prefs["trail_len"]; self.viewport.body_scale = self.prefs["body_scale"]; self.viewport.show_plume = self.prefs["plume"]
         self.recorder_video = ViewportRecorder(self.viewport)
         self.rebuild_simulation(); self._fill_explorer()
         st = self.settings.value("layout")
@@ -119,7 +128,7 @@ class MainWindow(QMainWindow):
         for d in (self.d_right, self.d_tel, self.d_con): v.addAction(d.toggleViewAction())
         wm = self.menuBar().addMenu("&Window"); wm.addAction(self._act("New 3D view window", self.new_view)); wm.addAction(self._act("New graph window", self.new_graph)); wm.addAction(self._act("Close all extra windows", self.close_extra))
         t = self.menuBar().addMenu("&Tools"); t.addAction(self._act("Design survival test...", self.open_survival)); t.addAction(self._act("Settings & customisation...", self.open_settings)); t.addSeparator(); t.addAction(self._act("Open logs folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(os.path.dirname(self.log_path))))))
-        h = self.menuBar().addMenu("&Help"); h.addAction(self._act("About AstraX", lambda: QMessageBox.about(self, "AstraX", f"AstraX {__version__}\nOpen-source (MIT) spaceflight simulation laboratory.\nResults are NOT validated mission predictions.")))
+        h = self.menuBar().addMenu("&Help"); h.addAction(self._act("About AstraX", self.show_about))
 
     def _build_statusbar(self):
         sb = self.statusBar(); self.l_time = QLabel(); self.l_met = QLabel(); self.l_acc = QLabel(); self.l_dt = QLabel(); self.l_perf = QLabel(); self.l_fps = QLabel(); self.l_warn = QLabel()
@@ -278,7 +287,7 @@ class MainWindow(QMainWindow):
     def _load_prefs(self):
         g = self.settings.value
         return dict(theme=g("theme", "Mission control (dark)"), font_pt=int(g("font_pt", 10)), trail_len=int(g("trail_len", 3000)), body_scale=float(g("body_scale", 1.0)),
-                    plume=str(g("plume", "true")).lower() == "true", record_interval_s=float(g("record_interval_s", 1.0)))
+                    plume=str(g("plume", "true")).lower() == "true", show_splash=str(g("show_splash", "true")).lower() == "true", record_interval_s=float(g("record_interval_s", 1.0)))
 
     def open_settings(self):
         dlg = SettingsDialog(self.prefs, self); dlg.applied.connect(self._apply_prefs); self._dialogs = [dlg]; dlg.show()
@@ -286,10 +295,53 @@ class MainWindow(QMainWindow):
     def _apply_prefs(self, p):
         self.prefs = p
         for k, v in p.items(): self.settings.setValue(k, v)
-        self.setStyleSheet(build_style(p["theme"], p["font_pt"]))
+        pal = apply_app_theme(QApplication.instance(), p["theme"]); self.setStyleSheet(build_style(p["theme"], p["font_pt"]))
+        if getattr(self, "frame_filter", None): self.frame_filter.set_colors(pal)
+        self._space_bg(p["theme"])
         for vp in [self.viewport] + [w.vp for w in self.extra if isinstance(w, ViewWindow)]:
             vp.trail_len = p["trail_len"]; vp.body_scale = p["body_scale"]; vp.show_plume = p["plume"]
         self.cfg.record_interval_s = p["record_interval_s"]
+
+    def _space_bg(self, theme):
+        """3D background = the theme background on dark themes (space stays dark on the light theme)."""
+        from ui.theme import THEMES
+        col = THEMES[theme]["BG"] if is_dark_theme(theme) else THEMES["Mission control (dark)"]["BG"]
+        self.viewport.set_space_background(col)
+        for w in self.extra:
+            if isinstance(w, ViewWindow): w.vp.set_space_background(col)
+
+    def show_about(self):
+        from PyQt6.QtGui import QPixmap
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
+        d = QDialog(self); d.setWindowTitle("About AstraX"); v = QVBoxLayout(d)
+        logo = QLabel(); pm = QPixmap(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "logo_full.png"))
+        if not pm.isNull(): logo.setPixmap(pm.scaledToWidth(560, Qt.TransformationMode.SmoothTransformation)); logo.setAlignment(Qt.AlignmentFlag.AlignCenter); v.addWidget(logo)
+        t = QLabel(f"<b>AstraX {__version__}</b><br>Open-source (MIT) spaceflight simulation laboratory.<br>Results are simplified-model results, <b>not</b> validated mission predictions."); t.setAlignment(Qt.AlignmentFlag.AlignCenter); v.addWidget(t)
+        b = QPushButton("Close"); b.clicked.connect(d.accept); v.addWidget(b); d.exec()
+
+    # ---------------- presets / transfers / challenges ----------------
+    def _preset_loaded(self, name):
+        from astrax.missions import PRESET_ROCKETS
+        from astrax.rocket_library import get_rocket
+        if name in PRESET_ROCKETS:
+            self.rocket = get_rocket(PRESET_ROCKETS[name]); self.designer.set_rocket(self.rocket); self.viewport.set_rocket(self.rocket); self._fill_explorer()
+
+    def fly_transfer(self, origin, dest, dep_day, tof_days):
+        from astrax import transfer
+        from astrax.simulation import Phase
+        L, t = transfer.to_launch_config(self.system, origin, dest, dep_day, tof_days); plan = [Phase("Coast to " + dest + " (no mid-course correction)", "coast", 0.0, until={})]
+        self.launch, self.plan = L, plan; self.mission.set_scenario(L, plan); self.rebuild_simulation(); self.tabs.setCurrentIndex(0); self.cam.setCurrentIndex(0)
+        self.viewport.focus_on("Sun"); self.viewport.setCameraPosition(distance=6e8, elevation=60, azimuth=45); self.worker.set_accel(2e6); self.toggle_run()
+        self._log(f"Transfer {origin} -> {dest}: departure v-infinity {t['vinf_dep'] / 1e3:.2f} km/s, time of flight {tof_days:.0f} d; time acceleration set to 2,000,000x")
+
+    def load_challenge(self, name):
+        from astrax.rocket import default_rocket
+        if name == "Moon soft landing": self.mission.preset.setCurrentText("Moon powered descent (lunar lander)"); self.mission._load_preset()
+        else:
+            self.rocket = default_rocket(); self.designer.set_rocket(self.rocket)
+            if name == "Gentle ascent": self.rocket.limits.max_q_pa = 30e3; self.designer.set_rocket(self.rocket)
+            self.mission.preset.setCurrentText("Earth launch to LEO"); self.mission._load_preset()
+        self.tabs.setCurrentIndex(0); self._log(f"Challenge loaded: {name}" + (" - press ABORT in Flight safety near max-Q" if name == "Abort at max-Q" else ""))
 
     def _reset_layout(self): self.settings.remove("layout"); QMessageBox.information(self, "Layout", "Layout will reset on next start.")
     def closeEvent(self, e):

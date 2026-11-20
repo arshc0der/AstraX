@@ -14,7 +14,7 @@ from __future__ import annotations
 import math, time, copy
 from dataclasses import dataclass, field, asdict
 import numpy as np
-from .constants import G, G0, DEG
+from .constants import G, G0, DEG, DAY
 from . import integrators as integ
 from .atmosphere import density, pressure
 from . import aero, structure
@@ -31,7 +31,8 @@ class LaunchConfig:
     lat_deg: float = 28.5
     lon_deg: float = -80.6
     site_altitude_m: float = 0.0
-    start_mode: str = "pad"            # pad | orbit
+    start_mode: str = "pad"            # pad | orbit | hover (at rest above the surface) | transfer (departure leg with v_infinity)
+    start_day: float = 0.0             # days after J2000 at which the simulation starts (planet positions advance accordingly)
     orbit_altitude_m: float = 300e3    # for start_mode == orbit
     heading_deg: float = 90.0          # azimuth from north (90 = east)
     target_body: str = "Moon"
@@ -85,9 +86,9 @@ class Simulation:
 
     # ------------------------------------------------------------------ setup
     def reset(self):
-        self.t = 0.0                    # s since epoch (J2000)
+        self.t = self.launch.start_day * DAY   # s since epoch (J2000)
         self.met = 0.0                  # mission elapsed time (s)
-        self.bp, self.bv = self.system.initial_state()
+        self.bp, self.bv = self.system.initial_state(self.t)
         self.gm = np.array([b.gm for b in self.system.bodies])
         self.radii = np.array([b.radius_m for b in self.system.bodies])
         self.names = [b.name for b in self.system.bodies]
@@ -117,8 +118,13 @@ class Simulation:
         self._prev_rad_speed = None
         li = self.system.index(self.launch.body); self.li = li
         self._site_body_vec = self._site_vector_bodyframe()
+        self._land_burn = False
         if self.launch.start_mode == "orbit":
             self._place_in_orbit()
+        elif self.launch.start_mode == "hover":
+            self._place_hover()
+        elif self.launch.start_mode == "transfer":
+            self._place_transfer()
         else:
             self._hold_on_surface()
         self._log(f"Initialised: {self.rocket.name}, launch from {self.launch.body}, mode {self.launch.start_mode}")
@@ -183,6 +189,19 @@ class Simulation:
         self.rv = self.bv[self.li] + vc * (math.cos(h) * north + math.sin(h) * east) + np.array(self.launch.extra_velocity_mps)
         self.status = "FLYING"; self.direction = self.rv - self.bv[self.li]
         self.direction /= np.linalg.norm(self.direction)
+
+    def _place_hover(self):
+        """At rest relative to the surface, `orbit_altitude_m` above it (landing and drop experiments)."""
+        R = self.radii[self.li] + self.launch.orbit_altitude_m
+        self.rp, self.rv = self.surface_state(self.li, self._site_body_vec, R); self.status = "FLYING"
+        up, _, _ = self.local_frame(self.li, self.rp); self.direction = up
+
+    def _place_transfer(self):
+        """On the outbound hyperbolic leg: `extra_velocity_mps` is the departure v_infinity vector (relative to the origin body),
+        `orbit_altitude_m` the distance from the body centre; speed from energy conservation so v_infinity is preserved."""
+        vinf = np.array(self.launch.extra_velocity_mps, float); n = np.linalg.norm(vinf); d = vinf / n; r = self.launch.orbit_altitude_m
+        self.rp = self.bp[self.li] + d * r; self.rv = self.bv[self.li] + d * math.sqrt(n * n + 2 * self.gm[self.li] / r)
+        self.status = "FLYING"; self.direction = d
 
     # ----------------------------------------------------------------- queries
     def dominant_index(self, pos=None):
@@ -250,8 +269,8 @@ class Simulation:
                 vh = v_air / sp; cd, area = self._cd_area(b, alt, sp)
                 drag = 0.5 * rho * cd * area * sp * sp
                 acc = acc - (drag / m) * vh
-                if self.cfg.aero == "advanced" and not (self.capsule and self.chute_open):
-                    ca = float(np.clip(np.dot(dirn, vh), -1.0, 1.0)); sa = math.sqrt(max(0.0, 1 - ca * ca))
+                if self.cfg.aero == "advanced" and not self.capsule:
+                    ca = abs(float(np.clip(np.dot(dirn, vh), -1.0, 1.0))); sa = math.sqrt(max(0.0, 1 - ca * ca))
                     if sa > 1e-6:      # normal force pushes the vehicle against the cross-flow component
                         n_hat = -(vh - ca * dirn) / sa
                         acc = acc + (0.5 * rho * sp * sp * area * self.cn_alpha * sa * ca / m) * n_hat
@@ -336,6 +355,21 @@ class Simulation:
             b_ = self.system.bodies[i]; w_ = b_.omega * b_.spin_axis()
             v = self.rv - self.bv[i] - np.cross(w_, self.rp - self.bp[i]); sp = np.linalg.norm(v)
             d = v / sp if sp > 30.0 else up
+        elif m == "powered_landing":
+            # suicide-burn style landing: retrograde (surface-relative) thrust, start the burn when the required deceleration
+            # approaches the available one, then a proportional descent-rate controller near the ground.
+            b_ = self.system.bodies[i]; w_ = b_.omega * b_.spin_axis(); rel_r = self.rp - self.bp[i]; r = np.linalg.norm(rel_r)
+            v = self.rv - self.bv[i] - np.cross(w_, rel_r); speed = float(np.linalg.norm(v)); vr = float(np.dot(v, up)); alt = r - self.radii[i]
+            F, md, iv, _ = self.engine_params(1.0); aT = F / self.m if self.m > 0 else 1e-6; g = self.gm[i] / r ** 2
+            d_req = speed ** 2 / (2 * max(alt - 3.0, 0.5))
+            if not self._land_burn and vr < 0 and d_req + g >= 0.85 * aT: self._land_burn = True; self._log(f"LANDING BURN ignition at {alt:,.0f} m, descending {-vr:.1f} m/s")
+            d = (-v / speed) if speed > 3.0 else up
+            if alt < 40.0 and speed < 8.0: d = up
+            if not self._land_burn: return d, 0.0
+            if alt < 40.0:
+                vt = -(0.5 + 0.08 * alt); thr = (g + 0.8 * (vt - vr)) / aT
+            else: thr = (d_req + g) / aT
+            return d, float(max(0.0, min(1.0, thr)))
         elif m == "ascent_hold":
             # closed-loop insertion: choose pitch so vertical speed is steered toward a profile that reaches
             # target_alt_m with ~zero vertical speed (gravity-relief aware). Simplified, not optimal guidance.
@@ -394,10 +428,13 @@ class Simulation:
         dt = 0.02 / w
         atm = self.atmosphere_at(self.rp)
         if atm:
-            sp = max(1.0, np.linalg.norm(self.rv - self.bv[atm[0]])); H = self.system.bodies[atm[0]].atmosphere.scale_height_m
+            b_ = self.system.bodies[atm[0]]; w_ = b_.omega * b_.spin_axis()      # AIR-relative speed (the atmosphere co-rotates with the body)
+            sp = max(1.0, float(np.linalg.norm(self.rv - self.bv[atm[0]] - np.cross(w_, self.rp - self.bp[atm[0]])))); H = b_.atmosphere.scale_height_m
             dt = min(dt, 0.05 * H / sp)
             cd_, area_ = self._cd_area(self.system.bodies[atm[0]], atm[1], sp)        # drag relaxation time m/(rho Cd A v): keeps RK4 stable under a parachute
             if atm[2] > 0: dt = min(dt, 0.2 * self.m / max(atm[2] * cd_ * area_ * sp, 1e-9))
+        rr_ = self.rp - self.bp[i]; vr_ = float(np.dot(self.rv - self.bv[i], rr_) / np.linalg.norm(rr_)); alt_ = float(np.linalg.norm(rr_) - self.radii[i])
+        if vr_ < -1.0 and alt_ > 0: dt = min(dt, 0.05 * alt_ / -vr_)              # resolve the approach to the ground (landing guidance, touchdown)
         if self.throttle > 0: dt = min(dt, 0.1)
         if self.status == "PAD": dt = min(dt, 0.05)
         return float(max(self.cfg.dt_min_s, min(self.cfg.dt_max_s, dt)))
@@ -612,7 +649,7 @@ class Simulation:
                     stage=next((s.name for s in self.stages if s.kind == "core"), "-"),
                     rp_x=float(self.rp[0]), rp_y=float(self.rp[1]), rp_z=float(self.rp[2]),
                     rel_x=float(rel_r[0]), rel_y=float(rel_r[1]), rel_z=float(rel_r[2]),
-                    dist_sun_m=float(np.linalg.norm(self.rp - self.bp[0])),
+                    dist_sun_m=float(np.linalg.norm(self.rp - self.bp[0])), latitude_deg=self._lat_lon()[0], longitude_deg=self._lat_lon()[1],
                     mach=self.loads.get("mach", 0.0), aoa_deg=self.loads.get("aoa_deg", 0.0), heat_flux_w_m2=self.loads.get("heat", 0.0),
                     stress_mpa=self.loads.get("stress", 0.0) / 1e6, stress_ratio=self.loads.get("stress_ratio", 0.0), drag_n=self.last_drag,
                     q_ratio=self.loads.get("q_ratio", 0.0), g_ratio=self.loads.get("g_ratio", 0.0), heat_ratio=self.loads.get("heat_ratio", 0.0),
@@ -628,7 +665,7 @@ class Simulation:
 
     def _loads_and_failures(self, h):
         """Update aerodynamic / structural / thermal loads, peaks, warnings and trigger vehicle failure."""
-        if self.status != "FLYING" or self.capsule: return
+        if self.status != "FLYING": return
         atm = self.atmosphere_at(self.rp); L = self.rocket.limits
         mach = aoa = q = heat = 0.0; D = 0.0; Fn = 0.0
         if atm:
@@ -663,7 +700,7 @@ class Simulation:
             pk[k_] = max(pk[k_], v_)
         for name, r_ in (("dynamic pressure", q_r), ("axial load factor", g_r), ("nose heating", h_r), ("structural stress", worst / L.factor_of_safety)):
             if r_ > 1.0 and name not in self._warned: self._warned.add(name); self._log(f"WARNING: {name} above design limit ({r_ * 100:.0f}% of limit)")
-        if not self.cfg.failures: return
+        if not self.cfg.failures or self.capsule: return
         why = None
         if q_r > L.fail_factor: why = f"aerodynamic overload (max-Q {q / 1e3:.0f} kPa vs {L.max_q_pa / 1e3:.0f} kPa limit)"
         elif g_r > L.fail_factor: why = f"axial overload ({axial_g:.1f} g vs {L.max_axial_g:.1f} g limit)"
@@ -783,6 +820,11 @@ class Simulation:
             c.advance(seconds / n_points); pts.append(c.rp - c.bp[i0])
             if c.terminal(): break
         return np.array(pts), c.names[i0]
+
+    def _lat_lon(self):
+        """Sub-point latitude/longitude (deg) on the dominant body in its body-fixed frame (spin axis = body +Z)."""
+        i = self.dominant_index(); b = self.system.bodies[i]; u = (self._body_frame(i) @ self._rot_z(b.omega * self.t)).T @ (self.rp - self.bp[i])
+        u = u / max(np.linalg.norm(u), 1e-12); return math.degrees(math.asin(max(-1.0, min(1.0, u[2])))), math.degrees(math.atan2(u[1], u[0]))
 
     def total_energy_barycentric(self):
         """Conserved check quantity for the gravity-only N-body system (J): sum KE + PE of bodies."""

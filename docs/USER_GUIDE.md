@@ -1,5 +1,7 @@
 # AstraX User Guide
 
+> Other documents: [QUICKSTART](QUICKSTART.md) · [TUTORIALS](TUTORIALS.md) · [UI_REFERENCE](UI_REFERENCE.md) · [FAQ](FAQ.md) · [index](README.md)
+
 AstraX is a desktop laboratory where you **design a rocket, fly it in 3D, break it on purpose, and study what it did to the orbit**.
 This guide is for normal users: no programming needed (except the optional flight-computer script).
 
@@ -192,6 +194,31 @@ Editing restarts the simulation so gravity and motion use the new values. **Rese
 
 ## 12. Customise AstraX
 **Tools ▸ Settings & customisation…**: colour theme (*Mission control dark, Midnight blue, High contrast, Light*), interface font size, trail length, planet size exaggeration, plume on/off, telemetry sample interval. Settings are remembered.
+
+---
+
+## 12b. New in 3.2: planning, landing, studies, challenges
+
+### Launch windows (right panel ▸ *Launch windows*)
+Choose origin and destination planets, a search start (days after J2000), span, and flight-time range, then **Compute**. AstraX solves Lambert's problem for a grid of departure dates and flight times and draws a **porkchop plot** (total delta-v). The best window is summarised (dates, v-infinity, C3, burns, synodic period). **Fly best transfer in 3D** starts the rocket on the hyperbolic departure leg at the right epoch and runs the N-body simulation at 2,000,000x; watch *distance to destination* in Telemetry. Validated against the real 2001 Mars Odyssey window. Mean-element model: dates are indicative.
+
+### Powered landing and hover starts
+Start mode **hover** places the rocket at rest above the surface; the flight-plan mode `powered_landing` performs a suicide-burn landing (retrograde burn timed so deceleration reaches ~85 % of available, then a descent-rate controller near the ground). Preset **Moon powered descent** loads the *Lunar lander* example rocket.
+
+### Example rockets
+Designer ▸ *Example rockets*: Falcon-class two-stage, small launcher, heavy lifter with boosters, sounding rocket (suborbital), SSTO attempt (cannot reach orbit), lunar lander. All numbers are illustrative.
+
+### Studies
+*Max payload* (bisection), *Parameter sweep* (any rocket field by path, e.g. `stages[0].engine.count`), *Monte Carlo* (random thrust/Isp/Cd/mass errors → success rate), *Re-entry calculator* (peak g, heat flux, heat load; validated against Allen-Eggers).
+
+### Challenges
+First orbit, Gentle ascent (max-Q under 30 kPa), Moon soft landing, Abort at max-Q. *Run* gives a headless pass/fail with a message; *Load in 3D* sets up the scenario for you to fly.
+
+### Ground track
+Telemetry ▸ Trajectory ▸ *Ground track* plots the sub-point latitude/longitude on the dominant body.
+
+### Look and feel
+The splash screen plays your logo animation on the theme colour; the window uses a dark Fusion palette and (on Windows) a dark native title bar matching the theme. Change it in *Settings*. See [BRANDING](BRANDING.md).
 
 ---
 

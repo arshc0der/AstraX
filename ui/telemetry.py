@@ -17,7 +17,8 @@ VARS = [("altitude_m", "Altitude", 1e3, "km"), ("speed_mps", "Velocity (vs domin
         ("apoapsis_alt_m", "Apoapsis altitude", 1e3, "km"), ("periapsis_alt_m", "Periapsis altitude", 1e3, "km"), ("ecc", "Eccentricity", 1.0, ""),
         ("dv_spent_mps", "Delta-v spent", 1.0, "m/s"), ("gravity_force_dominant_n", "Gravitational force (dominant)", 1e3, "kN"),
         ("mach", "Mach number", 1.0, ""), ("aoa_deg", "Angle of attack", 1.0, "deg"), ("heat_flux_w_m2", "Nose heat flux", 1e3, "kW/m^2"),
-        ("stress_mpa", "Peak skin stress", 1.0, "MPa"), ("drag_n", "Aerodynamic drag", 1e3, "kN"), ("axial_g", "Axial load factor", 1.0, "g")]
+        ("stress_mpa", "Peak skin stress", 1.0, "MPa"), ("drag_n", "Aerodynamic drag", 1e3, "kN"), ("axial_g", "Axial load factor", 1.0, "g"),
+        ("latitude_deg", "Sub-point latitude", 1.0, "deg"), ("longitude_deg", "Sub-point longitude", 1.0, "deg")]
 
 
 class TelemetryPanel(QWidget):
@@ -53,7 +54,7 @@ class TelemetryPanel(QWidget):
         row.addLayout(col); gv.addLayout(row); self.tabs.addTab(gw, "Graphs")
         # ---- trajectory & travel analytics
         tw = QWidget(); tv = QVBoxLayout(tw); row = QHBoxLayout()
-        self.traj_mode = QComboBox(); self.traj_mode.addItems(["Relative to launch/dominant body (X-Y)", "Heliocentric ecliptic (X-Y, AU)", "Distance from Sun & destination vs time"])
+        self.traj_mode = QComboBox(); self.traj_mode.addItems(["Relative to launch/dominant body (X-Y)", "Heliocentric ecliptic (X-Y, AU)", "Distance from Sun & destination vs time", "Ground track (latitude / longitude)"])
         self.traj_mode.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon); self.traj_mode.setMinimumContentsLength(14); self.traj_mode.currentIndexChanged.connect(self.redraw_traj); row.addWidget(self.traj_mode); tv.addLayout(row)
         self.traj = pg.PlotWidget(); self.traj.setMinimumSize(120, 90); self.traj.setDownsampling(auto=True, mode="peak"); self.traj.showGrid(x=True, y=True, alpha=.25); self.traj.setAspectLocked(False); tv.addWidget(self.traj, 3)
         self.analysis = QTextBrowser(); self.analysis.setMaximumHeight(170); self.analysis.setMinimumHeight(40); tv.addWidget(self.analysis); self.tabs.addTab(tw, "Trajectory & travel analysis")
@@ -100,6 +101,9 @@ class TelemetryPanel(QWidget):
         elif m == 1:
             self.traj.setLabel("bottom", "x (ecliptic J2000)", units="AU"); self.traj.setLabel("left", "y", units="AU")
             x, y = r.arrays("rp_x", "rp_y"); self.traj.plot(x / 1.495978707e11, y / 1.495978707e11, pen=pg.mkPen("#fbbf24", width=2))
+        elif m == 3:
+            la, lo = r.arrays("latitude_deg", "longitude_deg"); self.traj.setLabel("bottom", "Longitude", units="deg"); self.traj.setLabel("left", "Latitude", units="deg"); self.traj.setXRange(-180, 180); self.traj.setYRange(-90, 90)
+            lo = np.where(np.abs(np.diff(lo, prepend=lo[:1])) > 180, np.nan, lo); self.traj.plot(lo, la, pen=pg.mkPen("#34d399", width=2))
         else:
             self.traj.setLabel("bottom", "Mission elapsed time", units="s"); self.traj.setLabel("left", "Distance", units="AU / km (see legend)")
             self.traj.addLegend(); t, ds, dt_ = r.arrays("met_s", "dist_sun_m", "dist_target_m")

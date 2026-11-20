@@ -28,6 +28,19 @@ All internal units are SI (m, kg, s). Frame: barycentric ecliptic J2000 (inertia
 **Not modelled:** buckling, fatigue, flutter, slosh, shock interaction, real-gas heating, wind, hold-down release dynamics, rotational attitude dynamics, engine-failure explosions, re-entry heating of a capsule.
 All numeric limits and material values are order-of-magnitude placeholders you can edit; verify them for your vehicle.
 
+## Interplanetary and entry tools (v3.2)
+| Tool | Model | Code | Validation |
+|---|---|---|---|
+| Lambert transfer | universal-variable solver (single revolution, prograde/retrograde) | `lambert.py` | Curtis Example 5.2; propagated solution reaches the target to 1e-4 km |
+| Launch windows | heliocentric Kepler ephemeris + Lambert grid; departure burn from circular parking orbit | `transfer.py` | synodic period Earth-Mars 779.9 d; best window = 2001 Odyssey (day ~469, ~200 d, v-inf ~3.5 km/s) |
+| Transfer start | rocket on outbound hyperbola, v-infinity preserved by energy | `Simulation._place_transfer` | energy test; N-body flight passes Mars within 0.03 AU |
+| Re-entry | planar ballistic entry, Sutton-Graves heating, heat-load integral | `reentry.py` | Allen-Eggers peak deceleration within 1-2 % (flat, gravity-free limit) |
+| Powered landing | suicide-burn guidance + descent-rate controller | `Simulation._guidance` | lunar lander lands < 10 m/s with propellant left |
+| Ground track | sub-point from body-fixed frame (spin axis simplified) | `Simulation._lat_lon` | pad lat/lon equals launch site |
+| Studies | sweep, bisection, Monte Carlo over the survival test | `studies.py` | reproducible with a seed |
+
+Limitations: planet positions use two-body mean elements (arc-minute-level errors; not a perturbed ephemeris); a transfer flown in the N-body sim misses the target by ~1-2 million km, which is the correction a real mission would make; capsule re-entry heating is not coupled to the live simulation (use the Re-entry calculator).
+
 ## Orbit tools
 `maneuver_preview` (elements before/after an ideal impulse), `predict` (coasts a deep copy of the simulation), `apply_impulse`, and an orbit log at every phase change / separation. Tested against Hohmann apoapsis, pure plane change at a node, and closed-orbit prediction.
 
@@ -48,7 +61,7 @@ edits live in a separate working copy and every body has a reset button.
 * Center of pressure is a simplified Barrowman estimate; inertia assumes uniform cylinders.
 * Phobos/Deimos, lift and rendezvous targeting tools are NOT implemented yet.
 
-## Validation performed (`python -m unittest discover -s tests -v`, 46 tests)
+## Validation performed (`python -m unittest discover -s tests -v`, 65 tests)
 * Kepler elements round-trip to 1e-9; Hohmann LEO->GEO dv/time match textbook values; circular-orbit period.
 * RK4 shows order 4 convergence on a harmonic oscillator; Dormand-Prince < 1e-8 error; Verlet energy bounded.
 * N-body total energy conserved to <1e-10 over 60 days (dt = 600 s); Earth returns to its starting longitude after one sidereal year (< 0.02 rad).

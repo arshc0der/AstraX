@@ -38,9 +38,12 @@
 - **Survival & safety:** Mach-dependent aerodynamics, structural/thermal/control failure model, one-click **design survival test** with 3D replay, abort with parachute capsule, failure injection.
 - **Orbit analysis:** orbit change per event, maneuver planner, predicted path overlay.
 - **Customisation:** extra 3D/graph windows, themes, font size.
+- **Interplanetary planner:** Lambert porkchop launch windows (matches the real 2001 Mars window) and N-body flight of the transfer.
+- **Landing, re-entry, studies, challenges:** powered landing, re-entry calculator, max payload, sweeps, Monte Carlo, ground track, example rockets.
+- **Branding:** animated splash, logo icons, dark theme by default with a matching native title bar.
 - **Flight computer:** original Python `mission_loop()` API preserved.
 
-**Start with the [User Guide](docs/USER_GUIDE.md).** Example output: [`docs/examples/`](docs/examples/).
+**Start with the [Quick start](docs/QUICKSTART.md), then the [User Guide](docs/USER_GUIDE.md). Full index: [docs/README.md](docs/README.md).** Example output: [`docs/examples/`](docs/examples/).
 
 ---
 

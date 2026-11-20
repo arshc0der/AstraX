@@ -1,5 +1,5 @@
 """Dark 'mission control' theme + procedurally drawn vector icons (no image files needed)."""
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QPen, QBrush, QPolygonF
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QPen, QBrush, QPolygonF, QPalette
 from PyQt6.QtCore import Qt, QPointF, QRectF
 
 THEMES = {
@@ -91,3 +91,21 @@ def make_icon(name: str, color=TEXT) -> QIcon:
     def stage(p, s): p.drawRect(QRectF(s * .3, s * .15, s * .4, s * .25)); p.drawRect(QRectF(s * .3, s * .6, s * .4, s * .25))
     return _icon({"play": play, "pause": pause, "stop": stop, "reset": reset, "slower": slower, "faster": faster, "rocket": rocket,
                   "planet": planet, "chart": chart, "record": rec, "camera": camera, "step": step, "stage": stage}[name], color)
+
+
+def apply_app_theme(app, theme="Mission control (dark)"):
+    """Fusion style + a palette from the theme, so native widgets (dialogs, message boxes, menus, scroll areas) match the stylesheet."""
+    p = THEMES.get(theme, THEMES["Mission control (dark)"]); app.setStyle("Fusion"); pal = QPalette(); c = QColor
+    for role, key in ((QPalette.ColorRole.Window, "BG"), (QPalette.ColorRole.Base, "PANEL"), (QPalette.ColorRole.AlternateBase, "PANEL2"), (QPalette.ColorRole.Button, "PANEL2"),
+                      (QPalette.ColorRole.ToolTipBase, "PANEL2"), (QPalette.ColorRole.WindowText, "TEXT"), (QPalette.ColorRole.Text, "TEXT"), (QPalette.ColorRole.ButtonText, "TEXT"),
+                      (QPalette.ColorRole.ToolTipText, "TEXT"), (QPalette.ColorRole.PlaceholderText, "MUTED"), (QPalette.ColorRole.Highlight, "ACCENT"), (QPalette.ColorRole.Link, "ACCENT"),
+                      (QPalette.ColorRole.BrightText, "WARN")):
+        pal.setColor(role, c(p[key]))
+    pal.setColor(QPalette.ColorRole.HighlightedText, c(p["BG"]))
+    for role in (QPalette.ColorRole.WindowText, QPalette.ColorRole.Text, QPalette.ColorRole.ButtonText):
+        pal.setColor(QPalette.ColorGroup.Disabled, role, c(p["MUTED"]))
+    app.setPalette(pal); return p
+
+
+def is_dark_theme(theme):
+    h = THEMES.get(theme, THEMES["Mission control (dark)"])["BG"].lstrip("#"); r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4)); return (0.299 * r + 0.587 * g + 0.114 * b) < 128

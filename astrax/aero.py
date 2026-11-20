@@ -47,4 +47,6 @@ def stagnation_heat_flux(body, rho: float, v: float, nose_radius_m: float) -> fl
 
 
 def normal_force(q: float, area: float, cn_alpha: float, alpha_rad: float) -> float:
-    return q * area * cn_alpha * math.sin(alpha_rad) * math.cos(alpha_rad)
+    """Normal force magnitude; angles beyond 90 deg are folded (a body flying backwards still feels a restoring cross-flow force)."""
+    a = alpha_rad if alpha_rad <= math.pi / 2 else math.pi - alpha_rad
+    return q * area * cn_alpha * math.sin(a) * math.cos(a)

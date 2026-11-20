@@ -8,14 +8,14 @@ NUMERIC = ["t_s", "met_s", "altitude_m", "speed_mps", "surface_speed_mps", "mass
            "throttle", "accel_thrust_ms2", "g_load", "dynamic_pressure_pa", "kinetic_j", "potential_j",
            "total_energy_j", "specific_energy_jkg", "sma_m", "ecc", "inc_deg", "apoapsis_alt_m", "periapsis_alt_m",
            "period_s", "dist_target_m", "dv_spent_mps", "gravity_force_dominant_n", "rp_x", "rp_y", "rp_z",
-           "rel_x", "rel_y", "rel_z", "dist_sun_m", "mach", "aoa_deg", "heat_flux_w_m2", "stress_mpa", "drag_n", "axial_g"]
+           "rel_x", "rel_y", "rel_z", "dist_sun_m", "mach", "aoa_deg", "heat_flux_w_m2", "stress_mpa", "drag_n", "axial_g", "latitude_deg", "longitude_deg"]
 UNITS = {"t_s": "s", "met_s": "s", "altitude_m": "m", "speed_mps": "m/s", "surface_speed_mps": "m/s", "mass_kg": "kg",
          "propellant_kg": "kg", "thrust_n": "N", "throttle": "-", "accel_thrust_ms2": "m/s^2", "g_load": "g",
          "dynamic_pressure_pa": "Pa", "kinetic_j": "J", "potential_j": "J", "total_energy_j": "J",
          "specific_energy_jkg": "J/kg", "sma_m": "m", "ecc": "-", "inc_deg": "deg", "apoapsis_alt_m": "m",
          "periapsis_alt_m": "m", "period_s": "s", "dist_target_m": "m", "dv_spent_mps": "m/s",
          "gravity_force_dominant_n": "N", "rp_x": "m", "rp_y": "m", "rp_z": "m", "rel_x": "m", "rel_y": "m",
-         "rel_z": "m", "dist_sun_m": "m", "mach": "-", "aoa_deg": "deg", "heat_flux_w_m2": "W/m^2", "stress_mpa": "MPa", "drag_n": "N", "axial_g": "g"}
+         "rel_z": "m", "dist_sun_m": "m", "mach": "-", "aoa_deg": "deg", "heat_flux_w_m2": "W/m^2", "stress_mpa": "MPa", "drag_n": "N", "axial_g": "g", "latitude_deg": "deg", "longitude_deg": "deg"}
 
 
 def setup_logging(log_dir="logs", level=logging.INFO) -> str:

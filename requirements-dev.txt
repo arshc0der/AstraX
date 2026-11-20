@@ -1,3 +1,4 @@
 -r requirements.txt
 pyinstaller
 matplotlib
+playwright  # only for tools/build_branding.py

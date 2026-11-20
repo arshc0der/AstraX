@@ -14,6 +14,8 @@ from astrax import project, atmosphere
 from astrax.runtime import MissionRuntime
 from astrax import aero, structure
 from astrax.survival import run_survival_test
+from astrax import lambert as lam, transfer, reentry, studies, challenges, rocket_library
+from astrax.missions import moon_descent
 
 
 class TestOrbital(unittest.TestCase):
@@ -254,6 +256,78 @@ class TestOrbitTools(unittest.TestCase):
         sim = _ascent(); last = len(sim.plan) - 1
         while sim.phase_idx < last and not sim.terminal(): sim.step()
         self.assertGreater(len(sim.orbit_log), 4); self.assertTrue(any("separation" in e["label"] for e in sim.orbit_log))
+
+
+class TestLambertAndTransfers(unittest.TestCase):
+    def test_lambert_curtis_example(self):      # Curtis, Orbital Mechanics for Engineering Students, Example 5.2
+        v1, v2 = lam.lambert([5000.0, 10000.0, 2100.0], [-14600.0, 2500.0, 7000.0], 3600.0, 398600.0)
+        np.testing.assert_allclose(v1, [-5.9925, 1.9254, 3.2456], atol=2e-3); np.testing.assert_allclose(v2, [-3.3125, -4.1966, -0.3853], atol=2e-3)
+    def test_lambert_solution_propagates_to_target(self):
+        mu = 398600.0; r1 = np.array([7000.0, 0, 0]); r2 = np.array([0, 12000.0, 1500.0]); tof = 2500.0; v1, v2 = lam.lambert(r1, r2, tof, mu)
+        f = lambda t, y: np.concatenate([y[3:], -mu * y[:3] / np.linalg.norm(y[:3]) ** 3]); y = np.concatenate([r1, v1]); t = 0.0
+        while t < tof - 1e-9: y = integ.rk4(f, t, y, 1.0); t += 1.0
+        self.assertLess(np.linalg.norm(y[:3] - r2), 1e-4)
+    def test_synodic_period_earth_mars(self):
+        self.assertAlmostEqual(transfer.synodic_period_days(SolarSystem(), "Earth", "Mars"), 779.9, delta=1.0)
+    def test_porkchop_finds_known_mars_window(self):      # real 2001 Mars Odyssey: launched ~day 462 after J2000, ~200 d flight, C3 ~ 12 km2/s2
+        pc = transfer.porkchop(SolarSystem(), "Earth", "Mars", 0, 800, 120, 350, 30, 30); b = pc["best"]
+        self.assertTrue(440 < b["dep_day"] < 500); self.assertTrue(170 < b["tof_days"] < 230); self.assertTrue(3000 < b["vinf_dep"] < 4000)
+    def test_start_day_moves_planets(self):
+        a = Simulation(); b = Simulation(launch=LaunchConfig(start_day=100.0)); ie = a.names.index("Earth")
+        ang = math.acos(np.dot(a.bp[ie] - a.bp[0], b.bp[ie] - b.bp[0]) / np.linalg.norm(a.bp[ie] - a.bp[0]) / np.linalg.norm(b.bp[ie] - b.bp[0]))
+        r0, _ = transfer.body_state(a.system, "Earth", 0.0); r1, _ = transfer.body_state(a.system, "Earth", 100 * 86400.0)        # Kepler reference (true anomaly advances unevenly: e = 0.0167)
+        expect = math.acos(np.dot(r0, r1) / np.linalg.norm(r0) / np.linalg.norm(r1))
+        self.assertAlmostEqual(math.degrees(ang), math.degrees(expect), delta=0.3); self.assertAlmostEqual(b.t, 100 * 86400)
+    def test_transfer_start_preserves_v_infinity(self):
+        s = SolarSystem(); L, t = transfer.to_launch_config(s, "Earth", "Mars", 469.0, 199.0); sim = Simulation(system=s, launch=L)
+        ie = sim.names.index("Earth"); eps = 0.5 * np.linalg.norm(sim.rv - sim.bv[ie]) ** 2 - sim.gm[ie] / np.linalg.norm(sim.rp - sim.bp[ie])
+        self.assertAlmostEqual(math.sqrt(2 * eps), t["vinf_dep"], delta=1.0)
+    def test_lambert_transfer_flies_near_mars(self):
+        s = SolarSystem(); pc = transfer.porkchop(s, "Earth", "Mars", 0, 800, 120, 350, 30, 30); b = pc["best"]; L, t = transfer.to_launch_config(s, "Earth", "Mars", b["dep_day"], b["tof_days"])
+        sim = Simulation(system=s, launch=L, plan=[Phase("coast", "coast", 0.0)], config=SimConfig(dt_mode="auto")); im = sim.names.index("Mars"); best = 1e30
+        while sim.met < b["tof_days"] * 86400 * 1.1 and not sim.terminal(): sim.step(); best = min(best, float(np.linalg.norm(sim.rp - sim.bp[im])))
+        self.assertLess(best, 5e9)          # within 0.03 AU: N-body + mean-element differences leave a mid-course correction to do
+
+
+class TestReentryLandingGroundTrack(unittest.TestCase):
+    def test_allen_eggers_peak_deceleration(self):
+        import copy
+        m = copy.deepcopy(SolarSystem().get("Mars")); m.radius_m *= 50; m.gm *= 1e-3; H = m.atmosphere.scale_height_m      # flat, gravity-free: Allen-Eggers assumptions
+        for v, g in ((5800.0, 15.0), (7000.0, 8.0)):
+            r = reentry.entry(m, 1000.0, 1.5, 3.0, 0.5, v, g, dt=0.02); ae = v ** 2 * math.sin(math.radians(g)) / (2 * math.e * H) / 9.80665
+            self.assertAlmostEqual(r.peak_decel_g / ae, 1.0, delta=0.02)
+    def test_earth_leo_entry_is_plausible(self):
+        r = reentry.entry(SolarSystem().get("Earth"), 5000.0, 1.3, 12.0, 4.7, 7800.0, 2.0); self.assertTrue(r.reached_surface); self.assertTrue(4 < r.peak_decel_g < 12)
+    def test_hover_start_free_fall_time(self):
+        L, plan = moon_descent(1000.0); sim = Simulation(rocket=rocket_library.lunar_lander(), launch=L, plan=[Phase("coast", "coast", 0.0)], config=SimConfig(dt_mode="auto", failures=False))
+        while not sim.terminal() and sim.met < 100: sim.step()
+        self.assertAlmostEqual(sim.met, math.sqrt(2 * 1000.0 / (sim.gm[sim.li] / sim.radii[sim.li] ** 2)), delta=2.0)
+    def test_powered_landing_is_soft(self):
+        r = challenges.moon_landing(); self.assertTrue(r.passed, r.message); self.assertGreater(r.sim.telemetry()["propellant_kg"], 3000)
+    def test_ground_track_at_pad_matches_launch_site(self):
+        tm = Simulation().telemetry(); self.assertAlmostEqual(tm["latitude_deg"], 28.5, delta=0.01); self.assertAlmostEqual(tm["longitude_deg"], -80.6, delta=0.01)
+    def test_equatorial_launch_stays_on_equator_band(self):
+        L, plan = earth_leo(200e3, 6.0); L.lat_deg = 0.0; sim = Simulation(launch=L, plan=plan, config=SimConfig(dt_mode="auto"))
+        while sim.met < 300 and not sim.terminal(): sim.step()
+        self.assertLess(abs(sim.telemetry()["latitude_deg"]), 3.0)
+
+
+class TestLibraryStudiesChallenges(unittest.TestCase):
+    def test_every_library_rocket_is_valid_and_builds(self):
+        for name, fn in rocket_library.LIBRARY.items():
+            r = fn(); e = r.estimates(); self.assertGreater(e["delta_v_mps"], 0, name); self.assertEqual([w for w in r.validate() if "cannot lift off" in w], [], name)
+            self.assertGreater(len(build_rocket_parts(r)), 4, name)
+    def test_sounding_rocket_does_not_reach_orbit_and_ssto_fails(self):
+        self.assertNotEqual(run_survival_test(rocket_library.sounding_rocket()).verdict, "SURVIVED"); self.assertNotEqual(run_survival_test(rocket_library.ssto_attempt()).verdict, "SURVIVED")
+    def test_param_paths(self):
+        r = default_rocket(); self.assertEqual(studies.get_param(r, "stages[0].engine.count"), 9); studies.set_param(r, "stages[1].dry_mass_kg", 5000.0); self.assertEqual(r.stages[1].dry_mass_kg, 5000.0)
+        studies.set_param(r, "limits.max_q_pa", 1234.0); self.assertEqual(r.limits.max_q_pa, 1234.0)
+    def test_sweep_payload_trend(self):
+        rows = studies.sweep(default_rocket(), "payload_mass_kg", [2000.0, 10000.0, 60000.0]); self.assertTrue(rows[0]["survived"]); self.assertFalse(rows[-1]["survived"])
+    def test_monte_carlo_reproducible(self):
+        a = studies.monte_carlo(default_rocket(), n=3, seed=5); b = studies.monte_carlo(default_rocket(), n=3, seed=5); self.assertEqual(a["verdicts"], b["verdicts"]); self.assertTrue(0.0 <= a["success_rate"] <= 1.0)
+    def test_challenges(self):
+        self.assertTrue(challenges.first_orbit().passed); self.assertTrue(challenges.gentle_ascent().passed)
 
 
 if __name__ == "__main__":

@@ -1,18 +1,43 @@
-"""AstraX entry point:  python main.py"""
-import os, sys
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import Qt
+"""AstraX entry point:  python main.py [--no-splash]"""
+import os, sys, threading, time
+
+BASE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BASE)
+
+
+def _preload():
+    """Import the heavy, GUI-free modules on a worker thread while the splash animates."""
+    for m in ("numpy", "PIL.Image", "OpenGL.GL", "astrax.simulation", "astrax.rocket_mesh", "astrax.survival", "astrax.transfer", "astrax.studies", "astrax.challenges"):
+        try: __import__(m)
+        except Exception: pass
 
 
 def main():
+    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtGui import QIcon
+    from PyQt6.QtCore import Qt, QSettings
     if hasattr(Qt, "HighDpiScaleFactorRoundingPolicy"):
         QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
-    app = QApplication(sys.argv); app.setApplicationName("AstraX")
-    base = os.path.dirname(os.path.abspath(__file__)); icon = os.path.join(base, "assets", "logo.png")
+    app = QApplication(sys.argv); app.setApplicationName("AstraX"); app.setOrganizationName("AstraX")
+    icon = os.path.join(BASE, "assets", "logo.ico" if sys.platform == "win32" else "logo.png")
     if os.path.exists(icon): app.setWindowIcon(QIcon(icon))
+    from ui.theme import apply_app_theme, THEMES, build_style
+    st = QSettings("AstraX", "AstraX2"); theme = str(st.value("theme", "Mission control (dark)"))
+    pal = apply_app_theme(app, theme); app.setStyleSheet(build_style(theme, int(st.value("font_pt", 10))))
+    from ui.winframe import FrameFilter
+    frames = FrameFilter(pal, app); app.installEventFilter(frames)           # dark/themed native title bars on Windows
+    show_splash = "--no-splash" not in sys.argv and str(st.value("show_splash", "true")).lower() == "true"
+    splash = None
+    if show_splash:
+        from ui.splash import AnimatedSplash
+        splash = AnimatedSplash(os.path.join(BASE, "assets", "splash"), bg=pal["BG"], border=pal["BORDER"]); splash.start()
+    th = threading.Thread(target=_preload, daemon=True); th.start()
+    while th.is_alive(): app.processEvents(); time.sleep(0.01)             # keep the animation running while modules load
     from ui.main_window import MainWindow
-    w = MainWindow(); w.show(); sys.exit(app.exec())
+    app.processEvents(); w = MainWindow(); w.frame_filter = frames
+    if splash is not None: splash.finish(w)
+    else: w.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

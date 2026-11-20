@@ -38,5 +38,21 @@ def leo_to_mars_transfer(alt_m=300e3, dv_mps=3600.0):
     return L, plan
 
 
+def moon_descent(alt_m=8000.0):
+    """Hover start at rest above the Moon, then an automatic suicide-burn landing (use the lunar lander)."""
+    L = LaunchConfig(body="Moon", lat_deg=0.0, lon_deg=0.0, start_mode="hover", orbit_altitude_m=alt_m, target_body="Moon")
+    return L, [Phase("Powered descent", "powered_landing", 1.0, until={})]
+
+
+def earth_mars_window(dep_start_day=0.0, span_days=800.0):
+    """Finds the cheapest Earth->Mars Lambert transfer in the search window and starts the rocket on the departure leg."""
+    from .bodies import SolarSystem; from . import transfer
+    sys_ = SolarSystem(); pc = transfer.porkchop(sys_, "Earth", "Mars", dep_start_day, span_days, 120, 350, 30, 30); b = pc["best"]
+    L, t = transfer.to_launch_config(sys_, "Earth", "Mars", b["dep_day"], b["tof_days"]); return L, [Phase("Coast to Mars (no mid-course correction)", "coast", 0.0, until={})]
+
+
+PRESET_ROCKETS = {"Moon powered descent (lunar lander)": "Lunar lander (Moon only)"}
+
 PRESETS = {"Earth launch to LEO": earth_leo, "LEO -> Sun dive (heliocentric retrograde burn)": leo_to_sun_dive,
-           "LEO -> Mars transfer burn (illustrative)": leo_to_mars_transfer}
+           "LEO -> Mars transfer burn (illustrative)": leo_to_mars_transfer,
+           "Moon powered descent (lunar lander)": moon_descent, "Earth -> Mars Lambert transfer (best window)": earth_mars_window}

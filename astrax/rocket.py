@@ -82,6 +82,7 @@ class Rocket:
     cd: float = 0.35                    # reference drag coefficient (user editable)
     custom_mesh_path: str = ""          # optional OBJ model used for display only
     nose_radius_m: float = 0.3          # nose-tip radius of curvature for stagnation heating
+    intended_body: str = "Earth"        # body this vehicle launches from (used for thrust-to-weight checks)
     active_control: bool = True         # TVC/fins keep attitude; if False an unstable vehicle tumbles
     limits: Limits = field(default_factory=Limits)
     notes: str = ""
@@ -232,6 +233,7 @@ class Rocket:
             propellant_kg=sum(s.propellant_kg * (s.booster_count if s.kind == "booster" else 1) for s in self.stages),
             mass_ratio=launch_mass / final_mass if final_mass else math.inf,
             twr_sl=thrust_sl / (launch_mass * 9.80665) if launch_mass else 0.0, thrust_sl_n=thrust_sl,
+            twr_local=thrust_sl / (launch_mass * SURFACE_G.get(self.intended_body, 9.80665)) if launch_mass else 0.0,
             delta_v_mps=dv_total, burn_time_s=burn_total,
             max_accel_ms2=max_acc,
             stages=rows, height_m=self.total_height_m, diameter_m=self.diameter_m,
@@ -250,7 +252,7 @@ class Rocket:
         for s in self.stages:
             if shell_mass(s) > 0.8 * s.dry_mass_kg: w.append(f"{s.name}: wall thickness implies a {shell_mass(s):,.0f} kg shell, close to/above the dry mass - raise dry mass or thin the wall.")
         e = self.estimates() if self.cores else None
-        if e and e["twr_sl"] < 1.0: w.append(f"Launch T/W = {e['twr_sl']:.2f} < 1: vehicle cannot lift off from Earth.")
+        if e and e["twr_local"] < 1.0: w.append(f"Launch T/W = {e['twr_local']:.2f} < 1: vehicle cannot lift off from {self.intended_body}.")
         return w
 
     # ---------- persistence ----------
@@ -278,6 +280,9 @@ class Rocket:
         with open(path, encoding="utf-8") as f: d = json.load(f)
         d.pop("astrax_format", None)
         return Rocket.from_dict(d)
+
+
+SURFACE_G = {"Earth": 9.80665, "Moon": 1.62, "Mars": 3.71, "Venus": 8.87, "Mercury": 3.70}   # m/s^2, NASA fact sheets
 
 
 def default_rocket() -> Rocket:
