@@ -1,6 +1,6 @@
 # Validation (generated)
 
-**65 tests.**
+**69 tests.**
 
 Every automated test, grouped by area. Run all of them with `python -m unittest discover -s tests -v`.
 
@@ -125,3 +125,12 @@ Every automated test, grouped by area. Run all of them with `python -m unittest 
 | `test_sweep_payload_trend` | sweep payload trend |
 | `test_monte_carlo_reproducible` | monte carlo reproducible |
 | `test_challenges` | challenges |
+
+## TestGpuSelection
+
+| test | what it checks |
+|---|---|
+| `test_classify_gpu_names` | classify gpu names |
+| `test_backend_choice` | backend choice |
+| `test_lspci_parsing_dual_gpu_laptop` | lspci parsing dual gpu laptop |
+| `test_software_renderer_detection` | software renderer detection |

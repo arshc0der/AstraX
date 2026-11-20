@@ -21,7 +21,7 @@ Every control, by location. Hover any control in the app for a tooltip.
 | Snapshot | save a PNG of the viewport |
 
 ## Status bar
-Simulation time · mission elapsed time · requested vs **achieved** speed · current dt and integrator · physics steps/s · FPS · numerics status (green "numerics OK" or the first warning).
+Simulation time · mission elapsed time · requested vs **achieved** speed · current dt and integrator · physics steps/s · FPS · **UI ms** (GUI time per frame) · **GPU / CPU rendering device** · numerics status (green "numerics OK" or the first warning).
 
 ## Menus
 - **File**: new/open/save scenario, export telemetry CSV, export mission report, save/load session, exit.
@@ -79,4 +79,4 @@ First orbit, Gentle ascent, Moon soft landing, Abort at max-Q: **Run** for a ver
 - **Event log**: all events, timestamped.
 
 ## Settings (Tools ▸ Settings)
-Theme (Mission control dark · Midnight blue · High contrast · Light), font size, trail length, planet size exaggeration, **animated splash on/off**, engine plume, telemetry sample interval. Saved between runs.
+Theme (Mission control dark · Midnight blue · High contrast · Light), font size, trail length, planet size exaggeration, **animated splash on/off**, engine plume, telemetry sample interval, and **Graphics & performance**: rendering Auto/GPU/CPU, prefer discrete GPU, visual quality, refresh-rate cap, Windows GPU preference button, detected GPUs and the current renderer. Saved between runs; see [GRAPHICS_AND_PERFORMANCE](GRAPHICS_AND_PERFORMANCE.md).

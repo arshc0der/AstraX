@@ -45,7 +45,7 @@ class OrbitPanel(QWidget):
             for i, e in enumerate(log):
                 for j, val in enumerate([f"{e['met']:,.0f}", e["label"], e["body"], _fmt(e["peri_alt"]), _fmt(e["apo_alt"]), f"{e['e']:.4f}", f"{e['inc']:.2f}", f"{e['speed']:,.0f} m/s"]): self.table.setItem(i, j, QTableWidgetItem(val))
         self._tick += 1
-        if self._tick % 20 == 0:
+        if self._tick % 40 == 0 and self.isVisible():
             rec = self.R()
             if rec is not None and len(rec) > 1:
                 t, pe, ap = rec.arrays("met_s", "periapsis_alt_m", "apoapsis_alt_m"); ap = ap.copy(); ap[~(ap < 1e12)] = float("nan")

@@ -8,7 +8,7 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 Python 3.10+ is required. On locked-down Windows PCs always use `python -m pip` (not `pip.exe`).
-Add `--no-splash` to skip the animated intro: `python main.py --no-splash`.
+Add `--no-splash` to skip the animated intro. Graphics options: `python main.py --gpu-info` (list GPUs), `--gpu` (force hardware OpenGL), `--cpu` (force software). If it lags, see [GRAPHICS_AND_PERFORMANCE](GRAPHICS_AND_PERFORMANCE.md).
 
 ## 2. First launch
 1. Right panel ▸ **Mission control** ▸ preset **Earth launch to LEO** ▸ *Load scenario preset*.

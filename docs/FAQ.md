@@ -6,6 +6,10 @@
 
 **The window is bigger than my screen.** *View ▸ Reset window layout*, restart. Panels scroll when space is tight.
 
+**The app lags and my GPU shows 0 % usage.** Only the 3D drawing uses the GPU; the physics runs on the CPU. On laptops with two GPUs Windows often runs Python on the integrated chip. Open *Tools ▸ Settings ▸ Graphics*, set Rendering to **GPU**, tick **Prefer the high-performance GPU**, restart, and check *GPU 1* in Task Manager. The status bar shows `GPU: <device>` or `CPU rendering`. Full guide: [GRAPHICS_AND_PERFORMANCE](GRAPHICS_AND_PERFORMANCE.md). Quick test: `python main.py --gpu-info`.
+
+**The status bar says "CPU rendering".** OpenGL is using a software renderer (llvmpipe / Microsoft Basic Render Driver). Update the graphics driver, choose Rendering = GPU, restart. Use Performance quality if you must stay on CPU.
+
 **The splash is slow / I don't want it.** `python main.py --no-splash`, or Settings ▸ untick *Show animated splash*.
 
 **The title bar is not dark.** Native title-bar colouring works on Windows 10 (1809+) and 11. On Linux/macOS the OS draws it.

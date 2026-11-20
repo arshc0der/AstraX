@@ -6,6 +6,7 @@
 | [USER_GUIDE](USER_GUIDE.md) | learn every feature in order (the main manual) |
 | [TUTORIALS](TUTORIALS.md) | follow 10 step-by-step exercises (orbit, abort, Mars window, landing...) |
 | [UI_REFERENCE](UI_REFERENCE.md) | look up what a specific panel, button or field does |
+| [GRAPHICS_AND_PERFORMANCE](GRAPHICS_AND_PERFORMANCE.md) | choose GPU/CPU rendering, fix lag and "GPU usage 0%" |
 | [PHYSICS](PHYSICS.md) | know exactly which equations, assumptions and limits are in the model |
 | [VALIDATION](VALIDATION.md) | see every automated test and what it proves *(generated)* |
 | [SCRIPTING_API](SCRIPTING_API.md) | write a Python flight computer or use the engine from your own scripts |

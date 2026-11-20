@@ -72,7 +72,10 @@ class TelemetryPanel(QWidget):
         V["grav"].setText(f"{tm['gravity_force_dominant_n'] / 1e3:,.1f} kN"); V["dest"].setText(f"{tm['dist_target_m'] / 1e3:,.0f} km"); V["dv"].setText(f"{tm['dv_spent_mps']:,.0f} m/s")
         self.fuel_bar.setValue(int(100 * tm["propellant_fraction"]))
         self._tick += 1
-        if self._tick % 15 == 0 and self.rec is not None and len(self.rec) > 1: self.redraw(); self.redraw_traj()
+        if self._tick % 30 == 0 and self.rec is not None and len(self.rec) > 1 and self.isVisible():      # graphs only when their tab is showing
+            i = self.tabs.currentIndex()
+            if i == 1: self.redraw()
+            elif i == 2: self.redraw_traj()
 
     # ---------- graphs ----------
     def set_recorder(self, rec, target): self.rec = rec; self.target_name = target

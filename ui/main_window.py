@@ -1,5 +1,5 @@
 """AstraX main window: viewport + explorer + inspector + telemetry dock + toolbar. Wiring only; physics is in astrax/."""
-import os, copy, logging, datetime
+import os, copy, logging, datetime, time
 from PyQt6.QtCore import Qt, QSettings, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QDesktopServices
 from PyQt6.QtCore import QUrl
@@ -41,7 +41,7 @@ class MainWindow(QMainWindow):
         super().__init__(); self.setWindowTitle(f"AstraX {__version__} - Spaceflight Simulation Laboratory"); self.resize(1500, 900); self.setMinimumSize(900, 600)
         _ico = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "logo.png")
         if os.path.exists(_ico): from PyQt6.QtGui import QIcon as _QI; self.setWindowIcon(_QI(_ico)); pass
-        self.log_path = setup_logging(); self.settings = QSettings("AstraX", "AstraX2"); self.extra = []; self._dialogs = []
+        self.log_path = setup_logging(); self.settings = QSettings("AstraX", "AstraX2"); self.extra = []; self._dialogs = []; self._ui_ms = 0.0; self.gfx = {}; self.gl_info = None; self.frame_filter = None
         self.prefs = self._load_prefs(); self.setStyleSheet(build_style(self.prefs['theme'], self.prefs['font_pt']))
         self.system = SolarSystem(); self.rocket = default_rocket(); self.cfg = SimConfig(method="rk4", dt_mode="auto")
         L, plan = earth_leo(); self.launch, self.plan = L, plan; self.worker = None; self.runtime = None; self.sim = None; self.rec = None
@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
         self._build_toolbar(); self._build_menus(); self._build_statusbar()
         self.viewport.init_bodies(self.system); self.viewport.refresh_orbits(); self.viewport.set_rocket(self.rocket)
         self._space_bg(self.prefs["theme"]); self.viewport.trail_len = self.prefs["trail_len"]; self.viewport.body_scale = self.prefs["body_scale"]; self.viewport.show_plume = self.prefs["plume"]
+        self.viewport.on_gl_info = self._gl_info; self._apply_quality()
         self.recorder_video = ViewportRecorder(self.viewport)
         self.rebuild_simulation(); self._fill_explorer()
         st = self.settings.value("layout")
@@ -131,8 +132,8 @@ class MainWindow(QMainWindow):
         h = self.menuBar().addMenu("&Help"); h.addAction(self._act("About AstraX", self.show_about))
 
     def _build_statusbar(self):
-        sb = self.statusBar(); self.l_time = QLabel(); self.l_met = QLabel(); self.l_acc = QLabel(); self.l_dt = QLabel(); self.l_perf = QLabel(); self.l_fps = QLabel(); self.l_warn = QLabel()
-        for l in (self.l_time, self.l_met, self.l_acc, self.l_dt, self.l_perf, self.l_fps): sb.addWidget(l)
+        sb = self.statusBar(); self.l_time = QLabel(); self.l_met = QLabel(); self.l_acc = QLabel(); self.l_dt = QLabel(); self.l_perf = QLabel(); self.l_fps = QLabel(); self.l_gpu = QLabel(); self.l_ui = QLabel(); self.l_warn = QLabel()
+        for l in (self.l_time, self.l_met, self.l_acc, self.l_dt, self.l_perf, self.l_fps, self.l_ui, self.l_gpu): sb.addWidget(l)
         sb.addPermanentWidget(self.l_warn)
 
     # ---------------- simulation lifecycle ----------------
@@ -141,7 +142,7 @@ class MainWindow(QMainWindow):
         self.sim = Simulation(self.system, self.rocket, self.launch, self.plan, self.cfg); self.runtime = MissionRuntime(self.sim, self._log)
         self.cfg.record_interval_s = self.prefs["record_interval_s"]; self.rec = Recorder(self.cfg.record_interval_s); self.rec.maybe_record(self.sim, True)
         self.worker = SimWorker(self.sim, self.rec, self.runtime); self.worker.snapshot.connect(self.on_snapshot); self.worker.finished_run.connect(self._run_finished)
-        self.worker.prediction.connect(self.viewport.set_prediction); self.worker.preview.connect(self.orbit.show_preview); self.viewport.set_prediction(None)
+        self.worker.emit_interval = 1.0 / max(5, self.prefs.get("fps_cap", 30)); self.worker.prediction.connect(self.viewport.set_prediction); self.worker.preview.connect(self.orbit.show_preview); self.viewport.set_prediction(None)
         for w in self.extra:
             if isinstance(w, ViewWindow): w.rebuild(self.system, self.rocket)
         self.telemetry.set_recorder(self.rec, self.launch.target_body); self.viewport.clear_trail(); self.viewport.refresh_orbits()
@@ -195,6 +196,14 @@ class MainWindow(QMainWindow):
 
     # ---------------- snapshots ----------------
     def on_snapshot(self, s):
+        t0 = time.perf_counter()
+        try: self._on_snapshot_impl(s)
+        finally:
+            if self.worker: self.worker.ack()          # tell the simulation thread the GUI is ready for the next frame
+            ms = (time.perf_counter() - t0) * 1000; self._ui_ms = ms if self._ui_ms == 0.0 else self._ui_ms * 0.9 + ms * 0.1
+            self.l_ui.setText(f"UI {self._ui_ms:.0f} ms  ")
+
+    def _on_snapshot_impl(self, s):
         self.viewport.update_scene(s); self.telemetry.update_live(s); self.emergency.update_snapshot(s); self.orbit.update_snapshot(s); tm = s["tm"]
         for w in self.extra: w.on_snapshot(s)
         self.overlay.setText(f"{tm['status']}   T+{tm['met_s']:,.0f}s   {tm['body']}  alt {tm['altitude_m'] / 1e3:,.1f} km   v {tm['speed_mps']:,.0f} m/s   {self.viewport.overlay_text}" if self.viewport.layers["Info overlay"] else "")
@@ -287,13 +296,13 @@ class MainWindow(QMainWindow):
     def _load_prefs(self):
         g = self.settings.value
         return dict(theme=g("theme", "Mission control (dark)"), font_pt=int(g("font_pt", 10)), trail_len=int(g("trail_len", 3000)), body_scale=float(g("body_scale", 1.0)),
-                    plume=str(g("plume", "true")).lower() == "true", show_splash=str(g("show_splash", "true")).lower() == "true", record_interval_s=float(g("record_interval_s", 1.0)))
+                    plume=str(g("plume", "true")).lower() == "true", show_splash=str(g("show_splash", "true")).lower() == "true", gfx_mode=str(g("gfx_mode", "auto")), gfx_prefer_discrete=str(g("gfx_prefer_discrete", "false")).lower() == "true", gfx_quality=str(g("gfx_quality", "auto")), fps_cap=int(g("fps_cap", 30)), record_interval_s=float(g("record_interval_s", 1.0)))
 
     def open_settings(self):
-        dlg = SettingsDialog(self.prefs, self); dlg.applied.connect(self._apply_prefs); self._dialogs = [dlg]; dlg.show()
+        dlg = SettingsDialog(self.prefs, self, dict(getattr(self, 'gfx', {}) or {}, gl=self.viewport.gl_info)); dlg.applied.connect(self._apply_prefs); self._dialogs = [dlg]; dlg.show()
 
     def _apply_prefs(self, p):
-        self.prefs = p
+        old = dict(self.prefs); self.prefs = p
         for k, v in p.items(): self.settings.setValue(k, v)
         pal = apply_app_theme(QApplication.instance(), p["theme"]); self.setStyleSheet(build_style(p["theme"], p["font_pt"]))
         if getattr(self, "frame_filter", None): self.frame_filter.set_colors(pal)
@@ -301,6 +310,39 @@ class MainWindow(QMainWindow):
         for vp in [self.viewport] + [w.vp for w in self.extra if isinstance(w, ViewWindow)]:
             vp.trail_len = p["trail_len"]; vp.body_scale = p["body_scale"]; vp.show_plume = p["plume"]
         self.cfg.record_interval_s = p["record_interval_s"]
+        self._apply_quality()
+        if (old.get("gfx_mode", "auto"), old.get("gfx_prefer_discrete", False)) != (p.get("gfx_mode", "auto"), p.get("gfx_prefer_discrete", False)):
+            from PyQt6.QtWidgets import QMessageBox as _MB
+            if _MB.question(self, "Restart required", "The graphics backend changes after a restart. Restart AstraX now?") == _MB.StandardButton.Yes:
+                from ui import gpu; gpu.restart_app()
+
+    def _gl_info(self, info):
+        """Called once from the first paint: shows which device renders the 3D view and, if it is the CPU, suggests the GPU."""
+        from ui import gpu
+        self.gl_info = info; soft = gpu.is_software_renderer(info.get("renderer", ""))
+        self.l_gpu.setText(f"<span style='color:{'#fbbf24' if soft else '#34d399'}'>{'CPU rendering: ' if soft else 'GPU: '}{info.get('renderer', '?')}</span>  ")
+        log.info("OpenGL renderer: %s | %s | %s", info.get("renderer"), info.get("vendor"), info.get("version"))
+        QTimer.singleShot(0, self._apply_quality)          # never rebuild GL items from inside paintGL
+        hw = [g for g in (getattr(self, "gfx", {}) or {}).get("gpus", []) if g["kind"] in ("discrete", "integrated")]
+        if soft and hw and str(self.settings.value("gfx_hint_dismissed", "false")).lower() != "true":
+            from PyQt6.QtCore import QTimer as _T
+            _T.singleShot(1200, self._software_hint)
+
+    def _software_hint(self):
+        from PyQt6.QtWidgets import QMessageBox as _MB
+        m = _MB(self); m.setWindowTitle("Graphics"); m.setText("AstraX is drawing with the CPU (software OpenGL), but a GPU was detected.")
+        m.setInformativeText("Open Settings > Graphics, choose 'GPU (hardware OpenGL)' (and 'Prefer the high-performance GPU' on laptops), then restart.")
+        b1 = m.addButton("Open graphics settings", _MB.ButtonRole.AcceptRole); m.addButton("Later", _MB.ButtonRole.RejectRole); b3 = m.addButton("Don't show again", _MB.ButtonRole.DestructiveRole); m.exec()
+        if m.clickedButton() is b1: self.open_settings()
+        elif m.clickedButton() is b3: self.settings.setValue("gfx_hint_dismissed", True)
+
+    def _apply_quality(self):
+        """Resolve 'auto' (performance when software-rendering) and apply to every 3D view."""
+        from ui import gpu
+        q = self.prefs.get("gfx_quality", "auto")
+        if q == "auto": q = "performance" if (getattr(self, "gl_info", None) and gpu.is_software_renderer(self.gl_info.get("renderer", ""))) else "quality"
+        for vp in [self.viewport] + [w.vp for w in self.extra if isinstance(w, ViewWindow)]: vp.set_quality(q)
+        if self.worker: self.worker.emit_interval = 1.0 / max(5, self.prefs.get("fps_cap", 30))
 
     def _space_bg(self, theme):
         """3D background = the theme background on dark themes (space stays dark on the light theme)."""

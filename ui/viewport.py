@@ -40,6 +40,8 @@ class SpaceViewport(gl.GLViewWidget):
         for name, col in (("v", (.2, 1, .4, 1)), ("a", (1, 1, .2, 1)), ("g", (1, .3, .3, 1))):
             it = gl.GLLinePlotItem(color=col, width=3, antialias=True); self.addItem(it); self.vec_items[name] = it
         self.overlay_text = ""
+        self.perf = False; self._every = 1; self._frame = 0; self._rc = (24, 36); self._buf = np.zeros((50000, 3)); self._tn = 0
+        self.gl_info = None; self.on_gl_info = None
         cone = gl.MeshData.cylinder(rows=1, cols=20, radius=[1.0, 0.0], length=1.0)
         self.plume = gl.GLMeshItem(meshdata=cone, smooth=True, color=(1.0, 0.55, 0.15, 0.55), shader=None, glOptions="additive"); self.plume.setVisible(False); self.addItem(self.plume)
         self.plume_core = gl.GLMeshItem(meshdata=cone, smooth=True, color=(1.0, 0.95, 0.75, 0.8), shader=None, glOptions="additive"); self.plume_core.setVisible(False); self.addItem(self.plume_core)
@@ -59,7 +61,7 @@ class SpaceViewport(gl.GLViewWidget):
             for it in d.values(): self.removeItem(it)
             d.clear()
         self.system = system
-        md = gl.MeshData.sphere(rows=24, cols=36)
+        md = gl.MeshData.sphere(rows=self._rc[0], cols=self._rc[1])
         for b in system.bodies:
             m = gl.GLMeshItem(meshdata=md, smooth=True, color=b.color, shader="shaded", glOptions="opaque")
             self.addItem(m); self.body_items[b.name] = m
@@ -79,6 +81,7 @@ class SpaceViewport(gl.GLViewWidget):
                 r, _ = elements_to_state(b.a, b.e, b.inc, b.raan, b.argp, M, 1e14)
                 pts.append(r / 1000.0)
             self._orbit_pts[b.name] = np.array(pts)
+            if b.name in self.orbit_items: self.orbit_items[b.name].setData(pos=self._orbit_pts[b.name].astype(np.float32))
 
     def set_rocket(self, rocket):
         parts = build_rocket_parts(rocket)
@@ -126,6 +129,7 @@ class SpaceViewport(gl.GLViewWidget):
     def update_scene(self, snap):
         if self.system is None: return
         names = snap["names"]; bp = snap["bp"] / 1000.0; rp = snap["rp"] / 1000.0
+        self._frame += 1; heavy = (self._frame % self._every == 0)
         if self.focus == "Rocket": origin = rp
         else:
             origin = bp[names.index(self.focus)] if self.focus in names else np.zeros(3)
@@ -133,15 +137,16 @@ class SpaceViewport(gl.GLViewWidget):
         for i, b in enumerate(self.system.bodies):
             c = bp[i] - origin; r = b.radius_m / 1000.0 * self.body_scale
             it = self.body_items[b.name]; it.resetTransform(); it.translate(*c); it.scale(r, r, r)
-            lab = self.label_items[b.name]; lab.setVisible(self.layers["Labels"]); lab.setData(pos=c + np.array([0, 0, r * 1.2]))
+            lab = self.label_items[b.name]; show_l = self.layers["Labels"] and not self.perf; lab.setVisible(show_l)
+            if show_l and heavy: lab.setData(pos=c + np.array([0, 0, r * 1.2]))
             if b.name in self.atm_items:
                 ra = (b.radius_m + b.atmosphere.top_altitude_m) / 1000.0 * self.body_scale
-                a = self.atm_items[b.name]; a.setVisible(self.layers["Atmosphere boundary"]); a.resetTransform(); a.translate(*c); a.scale(ra, ra, ra)
+                a = self.atm_items[b.name]; a.setVisible(self.layers["Atmosphere boundary"] and not self.perf); a.resetTransform(); a.translate(*c); a.scale(ra, ra, ra)
             o = self.orbit_items[b.name]; ok = self.layers["Planet orbits"] and b.name in getattr(self, "_orbit_pts", {})
             o.setVisible(ok)
-            if ok:
+            if ok:      # geometry is uploaded once (refresh_orbits); per frame only a cheap GPU translation
                 par = bp[names.index(b.parent)] if b.parent else bp[0]
-                o.setData(pos=(self._orbit_pts[b.name] + par - origin).astype(np.float32))
+                o.resetTransform(); o.translate(*(par - origin))
         # rocket
         d = snap["direction"] / max(np.linalg.norm(snap["direction"]), 1e-12); crel = rp - origin
         vis = max(1.0, cam * 0.03 / max(self.rocket_height_km, 1e-6))
@@ -183,11 +188,12 @@ class SpaceViewport(gl.GLViewWidget):
             off_ = math.cos(el) * (math.cos(az) * north + math.sin(az) * east) + math.sin(el) * up_
             self.setCameraPosition(distance=dist, azimuth=math.degrees(math.atan2(off_[1], off_[0])), elevation=math.degrees(math.asin(max(-1, min(1, off_[2])))))
         # trajectory (absolute km stored, drawn relative)
-        self.trail_abs.append(rp.copy())
-        if len(self.trail_abs) > self.trail_len: self.trail_abs = self.trail_abs[-self.trail_len:]
+        cap = min(self.trail_len, len(self._buf))           # ring buffer: O(1) append, no per-frame list->array conversion
+        if self._tn < cap: self._buf[self._tn] = rp; self._tn += 1
+        else: self._buf[:cap - 1] = self._buf[1:cap]; self._buf[cap - 1] = rp; self._tn = cap
         self.trail.setVisible(self.layers["Rocket trajectory"])
-        if self.layers["Rocket trajectory"] and len(self.trail_abs) > 1:
-            self.trail.setData(pos=(np.array(self.trail_abs) - origin).astype(np.float32))
+        if self.layers["Rocket trajectory"] and self._tn > 1 and heavy:
+            self.trail.setData(pos=(self._buf[:self._tn] - origin).astype(np.float32))
         # vectors
         L = cam * 0.15
         def seg(vec):
@@ -210,7 +216,26 @@ class SpaceViewport(gl.GLViewWidget):
         self.overlay_text = (f"Focus: {self.focus}   Rocket drawn x{vis:,.0f} (visual scale)   Body size x{self.body_scale:g}" if self.layers["Info overlay"] else "")
         self.update()
 
-    def clear_trail(self): self.trail_abs = []
+    def clear_trail(self): self._tn = 0
+
+    def set_quality(self, level: str):
+        """'performance': lower sphere detail, no labels/atmosphere shells/line antialiasing, heavy items every 2nd frame."""
+        perf = level == "performance"; rc = (12, 18) if perf else (24, 36); changed = rc != self._rc
+        self.perf = perf; self._every = 2 if perf else 1; self._rc = rc
+        for it in list(self.vec_items.values()) + [self.trail] + list(self.orbit_items.values()):
+            it.antialias = not perf
+        if changed and self.system is not None: self.init_bodies(self.system); self.refresh_orbits()
+
+    def paintGL(self, *a, **k):
+        if self.gl_info is None:                      # first frame: ask OpenGL which device is rendering
+            try:
+                from OpenGL.GL import glGetString, GL_RENDERER, GL_VENDOR, GL_VERSION
+                dec = lambda v: v.decode() if isinstance(v, bytes) else str(v)
+                self.gl_info = dict(renderer=dec(glGetString(GL_RENDERER)), vendor=dec(glGetString(GL_VENDOR)), version=dec(glGetString(GL_VERSION)))
+            except Exception:
+                self.gl_info = dict(renderer="unknown", vendor="", version="")
+            if self.on_gl_info: self.on_gl_info(self.gl_info)
+        return super().paintGL(*a, **k)
 
     def set_prediction(self, data):
         """data: (points_km_relative_to_body, body_name) or None to clear."""

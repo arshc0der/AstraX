@@ -16,7 +16,8 @@ class SimWorker(QThread):
         super().__init__()
         self.sim, self.rec, self.runtime = sim, recorder, runtime
         self.lock = threading.Lock(); self.paused = True; self.accel = 1.0; self._quit = False
-        self.max_substeps_wall = 0.025         # wall-clock seconds of physics per frame (keeps UI fluid)
+        self.max_substeps_wall = 0.012         # wall-clock seconds of physics per loop (leaves the GUI thread room)
+        self.emit_interval = 1 / 30; self._pending = False
         self.achieved = 1.0; self.sps = 0.0; self._reset_req = False; self._stage_req = False
         self._last_emit = 0.0; self._warn_t = 0.0; self.warnings = []; self._cmds = queue.Queue()
 
@@ -25,6 +26,7 @@ class SimWorker(QThread):
         with self.lock: self.paused = v
     def set_accel(self, a):
         with self.lock: self.accel = max(1e-3, float(a))
+    def ack(self): self._pending = False
     def request_reset(self): self._reset_req = True
     def request_stage(self): self._stage_req = True
     def command(self, name, *args): self._cmds.put((name, args))      # run on the simulation thread (no data races)
@@ -45,7 +47,7 @@ class SimWorker(QThread):
 
     def _emit(self, force=False):
         now = time.perf_counter()
-        if not force and now - self._last_emit < 1 / 30: return
+        if not force and (now - self._last_emit < self.emit_interval or self._pending): return    # back-pressure: never queue frames faster than the GUI draws them
         self._last_emit = now; s = self.sim
         alive = [d for d in s.debris if d["alive"]]
         snap = dict(status=s.status, throttle=s.throttle, capsule=s.capsule, explosion=s.explosion, orbit_log=list(s.orbit_log),
@@ -54,7 +56,7 @@ class SimWorker(QThread):
                     names=s.names, achieved=self.achieved, sps=self.sps, accel=self.accel, dt=(s.auto_dt() if s.cfg.dt_mode == "auto" else s.cfg.dt_s),
                     paused=self.paused, warnings=self.warnings, n_jettisoned=len(s.jettisoned), n_events=len(s.events), t=s.t, n_rec=len(self.rec),
                     phase=(s.plan[s.phase_idx].name if 0 <= s.phase_idx < len(s.plan) else "-"))
-        self.snapshot.emit(snap)
+        self._pending = True; self.snapshot.emit(snap)
 
     def run(self):
         last = time.perf_counter(); self._emit(True)
@@ -80,5 +82,5 @@ class SimWorker(QThread):
             if time.perf_counter() - self._warn_t > 1.0:
                 self.warnings = self.sim.stability_warnings(); self._warn_t = time.perf_counter()
                 for w in self.warnings: log.warning(w)
-            self._emit(); time.sleep(0.001)
+            self._emit(); time.sleep(0.003)
         log.info("Simulation thread stopped")

@@ -15,7 +15,7 @@ ui/       (PyQt6 / pyqtgraph / PyOpenGL)
   viewport.py  rocket_designer.py  planet_inspector.py  mission_panel.py
   telemetry.py  orbit_panel.py  emergency_panel.py  planner_panel.py  studies_panel.py  challenges_panel.py
   survival_dialog.py  extra_windows.py  settings_dialog.py  education.py
-  theme.py  winframe.py  splash.py  video.py  worker_util.py
+  theme.py  winframe.py  splash.py  video.py  worker_util.py  gpu.py
 assets/   logo, icons, splash frames, branding SVG originals      tools/  build_branding.py  gen_docs.py
 tests/    test_physics.py (65 tests)                              docs/   this documentation
 ```

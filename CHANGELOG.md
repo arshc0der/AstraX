@@ -1,4 +1,9 @@
 # Changelog
+## 3.2.1-dev
+* **GPU/CPU selection:** detect GPUs; Auto/GPU/CPU rendering; prefer high-performance GPU (Windows registry preference, Linux PRIME); `--gpu-info`, `--gpu`, `--cpu`; status-bar renderer display; hint when a GPU exists but the CPU renders.
+* **Lag fixes:** snapshot back-pressure, one-time orbit-line upload, ring-buffer trail, visible-tab-only graph redraws, shorter physics slices, GIL switch interval, Performance quality mode, refresh-rate cap, `UI ms` indicator.
+* New doc: GRAPHICS_AND_PERFORMANCE.
+
 ## 3.2.0-dev
 * **Branding:** new logo, animated SVG splash (pre-rendered, theme-coloured), window/taskbar icons, About dialog; dark Fusion palette and themed native title bar on Windows; dark theme default; `tools/build_branding.py`.
 * **Interplanetary:** Lambert solver, launch-window porkchop planner, N-body flight of the transfer, start epoch (`start_day`), `transfer` start mode.

@@ -16,6 +16,7 @@ from astrax import aero, structure
 from astrax.survival import run_survival_test
 from astrax import lambert as lam, transfer, reentry, studies, challenges, rocket_library
 from astrax.missions import moon_descent
+from ui import gpu
 
 
 class TestOrbital(unittest.TestCase):
@@ -328,6 +329,22 @@ class TestLibraryStudiesChallenges(unittest.TestCase):
         a = studies.monte_carlo(default_rocket(), n=3, seed=5); b = studies.monte_carlo(default_rocket(), n=3, seed=5); self.assertEqual(a["verdicts"], b["verdicts"]); self.assertTrue(0.0 <= a["success_rate"] <= 1.0)
     def test_challenges(self):
         self.assertTrue(challenges.first_orbit().passed); self.assertTrue(challenges.gentle_ascent().passed)
+
+
+class TestGpuSelection(unittest.TestCase):
+    def test_classify_gpu_names(self):
+        self.assertEqual(gpu.classify("NVIDIA GeForce RTX 3050 Laptop GPU"), "discrete"); self.assertEqual(gpu.classify("AMD Radeon RX 6600"), "discrete")
+        self.assertEqual(gpu.classify("Intel(R) UHD Graphics 620"), "integrated"); self.assertEqual(gpu.classify("AMD Radeon(TM) Graphics"), "integrated")
+        self.assertEqual(gpu.classify("Microsoft Basic Render Driver"), "software"); self.assertEqual(gpu.classify("llvmpipe (LLVM 15.0.7, 256 bits)"), "software")
+    def test_backend_choice(self):
+        hw = [dict(name="x", kind="integrated")]; sw = [dict(name="y", kind="software")]
+        self.assertEqual(gpu.choose_backend("auto", hw), "gpu"); self.assertEqual(gpu.choose_backend("auto", sw), "cpu"); self.assertEqual(gpu.choose_backend("auto", []), "gpu")
+        self.assertEqual(gpu.choose_backend("cpu", hw), "cpu"); self.assertEqual(gpu.choose_backend("gpu", sw), "gpu")
+    def test_lspci_parsing_dual_gpu_laptop(self):
+        out = gpu.parse_lspci("00:02.0 VGA compatible controller: Intel Corporation UHD Graphics 620\n01:00.0 3D controller: NVIDIA Corporation GP107M [GeForce GTX 1050 Mobile]\n00:1f.3 Audio device: Intel")
+        self.assertEqual([g["kind"] for g in out], ["integrated", "discrete"])
+    def test_software_renderer_detection(self):
+        self.assertTrue(gpu.is_software_renderer("GDI Generic")); self.assertFalse(gpu.is_software_renderer("NVIDIA GeForce GTX 1650/PCIe/SSE2"))
 
 
 if __name__ == "__main__":

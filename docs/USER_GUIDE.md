@@ -217,6 +217,9 @@ First orbit, Gentle ascent (max-Q under 30 kPa), Moon soft landing, Abort at max
 ### Ground track
 Telemetry ▸ Trajectory ▸ *Ground track* plots the sub-point latitude/longitude on the dominant body.
 
+### Graphics: GPU or CPU
+*Tools ▸ Settings ▸ Graphics & performance* lets you choose **Auto / GPU / CPU** rendering, prefer the discrete GPU on laptops, pick Quality or Performance mode and cap the refresh rate. The status bar shows which device renders the 3D view. See [GRAPHICS_AND_PERFORMANCE](GRAPHICS_AND_PERFORMANCE.md).
+
 ### Look and feel
 The splash screen plays your logo animation on the theme colour; the window uses a dark Fusion palette and (on Windows) a dark native title bar matching the theme. Change it in *Settings*. See [BRANDING](BRANDING.md).
 

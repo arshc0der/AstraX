@@ -13,6 +13,14 @@ def _preload():
 
 
 def main():
+    from ui import gpu
+    if "--gpu-info" in sys.argv:                       # diagnostics without opening any window
+        g = gpu.detect_gpus(); print("Detected GPUs:"); [print(f"  - {x['name']} ({x['kind']})") for x in g] or print("  none"); print("Auto would choose:", gpu.choose_backend("auto", g)); return
+    from PyQt6.QtCore import QSettings as _QS
+    _st = _QS("AstraX", "AstraX2")
+    mode = "gpu" if "--gpu" in sys.argv else "cpu" if "--cpu" in sys.argv else str(_st.value("gfx_mode", "auto"))
+    gfx = gpu.configure_graphics(mode, str(_st.value("gfx_prefer_discrete", "false")).lower() == "true", str(_st.value("gfx_quality", "auto")))   # must precede QApplication
+    sys.setswitchinterval(0.002)                        # give the GUI thread the GIL more often while the physics thread runs
     from PyQt6.QtWidgets import QApplication
     from PyQt6.QtGui import QIcon
     from PyQt6.QtCore import Qt, QSettings
@@ -34,7 +42,7 @@ def main():
     th = threading.Thread(target=_preload, daemon=True); th.start()
     while th.is_alive(): app.processEvents(); time.sleep(0.01)             # keep the animation running while modules load
     from ui.main_window import MainWindow
-    app.processEvents(); w = MainWindow(); w.frame_filter = frames
+    app.processEvents(); w = MainWindow(); w.frame_filter = frames; w.gfx = gfx
     if splash is not None: splash.finish(w)
     else: w.show()
     sys.exit(app.exec())
