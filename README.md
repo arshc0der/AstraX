@@ -1,4 +1,4 @@
-# 🚀 AstraX — Pro Solar System Architect
+# AstraX — Solar System Architect
 
 > An enterprise-grade **solar system simulator & mission design lab** with real physics, real code, and real space missions.
 
@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/arshc0der/ASTRA-X-UNIVERSE-SIMULATOR/refs/heads/main/Testing/preview/logo.jpg" width="75%" />
+  <img src="https://github.com/arshc0der/AstraX/blob/main/assets/branding/astrax-splash-animated.svg" width="75%" />
 </p>
 
 ---
