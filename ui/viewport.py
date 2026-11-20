@@ -9,7 +9,8 @@ import pyqtgraph.opengl as gl
 from pyqtgraph import Transform3D
 from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt
-from astrax.rocket_mesh import build_rocket_parts
+import random
+from astrax.rocket_mesh import build_rocket_parts, _box
 from astrax.orbital import elements_to_state
 
 LAYERS = ["Planet orbits", "Rocket trajectory", "Velocity vector", "Acceleration vector", "Gravity vectors",
@@ -35,10 +36,18 @@ class SpaceViewport(gl.GLViewWidget):
         self._rocket_key = None; self.system = None
         self.trail = gl.GLLinePlotItem(color=(1, .85, .1, 1), width=2, antialias=True); self.addItem(self.trail)
         self.axes = gl.GLAxisItem(); self.addItem(self.axes)
-        self.grid = gl.GLGridItem(); self.grid.setSpacing(5, 5); self.grid.setSize(60, 60); self.addItem(self.grid)
+        self.grid = gl.GLGridItem(); self.grid.setSpacing(1e7, 1e7); self.grid.setSize(2e8, 2e8); self.addItem(self.grid)   # spacing FIRST: setSize triggers line generation
         for name, col in (("v", (.2, 1, .4, 1)), ("a", (1, 1, .2, 1)), ("g", (1, .3, .3, 1))):
             it = gl.GLLinePlotItem(color=col, width=3, antialias=True); self.addItem(it); self.vec_items[name] = it
         self.overlay_text = ""
+        cone = gl.MeshData.cylinder(rows=1, cols=20, radius=[1.0, 0.0], length=1.0)
+        self.plume = gl.GLMeshItem(meshdata=cone, smooth=True, color=(1.0, 0.55, 0.15, 0.55), shader=None, glOptions="additive"); self.plume.setVisible(False); self.addItem(self.plume)
+        self.plume_core = gl.GLMeshItem(meshdata=cone, smooth=True, color=(1.0, 0.95, 0.75, 0.8), shader=None, glOptions="additive"); self.plume_core.setVisible(False); self.addItem(self.plume_core)
+        self.debris_item = gl.GLScatterPlotItem(pos=np.zeros((1, 3), np.float32), size=5, color=(1, .6, .2, 1), pxMode=True); self.debris_item.setVisible(False); self.addItem(self.debris_item)
+        self.flash = gl.GLMeshItem(meshdata=gl.MeshData.sphere(rows=12, cols=18), smooth=True, color=(1, .7, .2, .5), shader=None, glOptions="additive"); self.flash.setVisible(False); self.addItem(self.flash)
+        self.pred = gl.GLLinePlotItem(color=(.4, 1, .9, 1), width=2, antialias=True); self.pred.setVisible(False); self.addItem(self.pred)
+        self.pred_pts = None; self.pred_body = None; self.capsule_item = None; self.pad_item = None; self.show_plume = True; self.rocket_radius_km = 0.002
+        self.banner_events = []
 
     # ---------------- setup ----------------
     def init_bodies(self, system):
@@ -73,7 +82,13 @@ class SpaceViewport(gl.GLViewWidget):
         V[:, 2] -= 0                                  # origin at base of stack
         if self.rocket_item is not None: self.removeItem(self.rocket_item)
         self.rocket_item = gl.GLMeshItem(vertexes=V, faces=F, faceColors=C, smooth=False, shader="shaded", glOptions="opaque")
-        self.addItem(self.rocket_item); self.rocket_height_km = rocket.total_height_m / 1000.0
+        self.addItem(self.rocket_item); self.rocket_height_km = rocket.total_height_m / 1000.0; self.rocket_radius_km = rocket.diameter_m / 2000.0
+        for it in (self.capsule_item, self.pad_item):
+            if it is not None: self.removeItem(it)
+        nose = [p for p in parts if p.name == "nose"]
+        if nose:
+            cv, cf, cc = _merge(nose, 1e-3); self.capsule_item = gl.GLMeshItem(vertexes=cv, faces=cf, faceColors=cc, smooth=False, shader="shaded"); self.capsule_item.setVisible(False); self.addItem(self.capsule_item)
+        pv, pf = _box((0, 0, -1.5), (40, 40, 3.0)); self.pad_item = gl.GLMeshItem(vertexes=(pv * 1e-3).astype(np.float32), faces=pf.astype(np.int32), color=(.45, .45, .5, 1), smooth=False, shader="shaded"); self.addItem(self.pad_item)
         self._com_km = rocket.center_of_mass() / 1000.0
 
     def set_layer(self, name, on): self.layers[name] = on
@@ -91,6 +106,7 @@ class SpaceViewport(gl.GLViewWidget):
         self.mode = mode
         if mode == "follow_rocket": self.focus = "Rocket"; self.setCameraPosition(distance=max(0.5, self.rocket_height_km * 12))
         elif mode == "first_person": self.focus = "Rocket"; self.setCameraPosition(distance=1e-3)
+        elif mode == "launch": self.focus = "Rocket"; self.setCameraPosition(distance=max(0.2, self.rocket_height_km * 6))
         self.reset_center()
 
     def reset_center(self):
@@ -126,12 +142,42 @@ class SpaceViewport(gl.GLViewWidget):
         d = snap["direction"] / max(np.linalg.norm(snap["direction"]), 1e-12); crel = rp - origin
         vis = max(1.0, cam * 0.03 / max(self.rocket_height_km, 1e-6))
         if self.mode == "first_person": vis = 1.0
+        status = snap.get("status", "FLYING"); destroyed = status == "DESTROYED"; capsule = snap.get("capsule", False)
         if self.rocket_item is not None:
             z = d; x = np.cross([0, 0, 1.0], z); x = x / np.linalg.norm(x) if np.linalg.norm(x) > 1e-9 else np.array([1.0, 0, 0]); y = np.cross(z, x)
-            s = vis; off = -z * self._com_km * s
-            T = Transform3D(x[0] * s, y[0] * s, z[0] * s, crel[0] + off[0], x[1] * s, y[1] * s, z[1] * s, crel[1] + off[1],
-                            x[2] * s, y[2] * s, z[2] * s, crel[2] + off[2], 0, 0, 0, 1)
-            self.rocket_item.setTransform(T)
+            s = vis; off = -z * self._com_km * s; base = crel + off
+            T = Transform3D(x[0] * s, y[0] * s, z[0] * s, base[0], x[1] * s, y[1] * s, z[1] * s, base[1], x[2] * s, y[2] * s, z[2] * s, base[2], 0, 0, 0, 1)
+            self.rocket_item.setVisible(not destroyed and not capsule); self.rocket_item.setTransform(T)
+            if self.capsule_item is not None: self.capsule_item.setVisible(capsule and not destroyed); self.capsule_item.setTransform(T)
+            if self.pad_item is not None: self.pad_item.setVisible(status == "PAD"); self.pad_item.setTransform(T)
+            thr = snap.get("throttle", 0.0); burning = self.show_plume and thr > 0.01 and not destroyed and not capsule and status in ("FLYING", "PAD")
+            for it, rk, lk in ((self.plume, 0.85, 1.0), (self.plume_core, 0.4, 0.55)):
+                it.setVisible(burning)
+                if burning:
+                    R = self.rocket_radius_km * rk * s; Ln = self.rocket_height_km * 0.9 * thr * lk * (0.85 + 0.3 * random.random()) * s
+                    it.setTransform(Transform3D(x[0] * R, y[0] * R, -z[0] * Ln, base[0], x[1] * R, y[1] * R, -z[1] * Ln, base[1], x[2] * R, y[2] * R, -z[2] * Ln, base[2], 0, 0, 0, 1))
+        # debris (jettisoned stages = large white points, fragments = orange)
+        dp = snap.get("debris_pos")
+        if dp is not None and len(dp):
+            kinds = snap["debris_kind"]
+            col = np.array([(0.95, 0.95, 1.0, 1.0) if k == "stage" else (1.0, 0.55, 0.15, 1.0) for k in kinds], np.float32)
+            sz = np.array([10.0 if k == "stage" else 4.0 for k in kinds], np.float32)
+            self.debris_item.setData(pos=(dp / 1000.0 - origin).astype(np.float32), color=col, size=sz); self.debris_item.setVisible(True)
+        else: self.debris_item.setVisible(False)
+        ex = snap.get("explosion")
+        if ex is not None and 0 <= snap["t"] - ex[0] < 4.0:
+            age = snap["t"] - ex[0]; r_ = max(self.rocket_height_km * vis * 0.4, cam * 0.004) * (1 + 3 * age)
+            self.flash.resetTransform(); self.flash.translate(*(ex[1] / 1000.0 - origin)); self.flash.scale(r_, r_, r_); self.flash.setColor((1, .7, .2, max(0.0, 0.6 * (1 - age / 4)))); self.flash.setVisible(True)
+        else: self.flash.setVisible(False)
+        if self.pred_pts is not None and self.pred_body in names:
+            self.pred.setData(pos=(self.pred_pts + bp[names.index(self.pred_body)] - origin).astype(np.float32)); self.pred.setVisible(True)
+        else: self.pred.setVisible(False)
+        if self.mode == "launch":
+            tm_ = snap["tm"]; up_ = np.array([tm_["rel_x"], tm_["rel_y"], tm_["rel_z"]]); up_ /= max(np.linalg.norm(up_), 1e-9)
+            east = np.cross([0, 0, 1.0], up_); east = east / np.linalg.norm(east) if np.linalg.norm(east) > 1e-9 else np.array([0, 1.0, 0]); north = np.cross(up_, east)
+            el, az = math.radians(8), math.radians(-35); dist = max(0.05, self.rocket_height_km * vis * 4)
+            off_ = math.cos(el) * (math.cos(az) * north + math.sin(az) * east) + math.sin(el) * up_
+            self.setCameraPosition(distance=dist, azimuth=math.degrees(math.atan2(off_[1], off_[0])), elevation=math.degrees(math.asin(max(-1, min(1, off_[2])))))
         # trajectory (absolute km stored, drawn relative)
         self.trail_abs.append(rp.copy())
         if len(self.trail_abs) > self.trail_len: self.trail_abs = self.trail_abs[-self.trail_len:]
@@ -161,3 +207,8 @@ class SpaceViewport(gl.GLViewWidget):
         self.update()
 
     def clear_trail(self): self.trail_abs = []
+
+    def set_prediction(self, data):
+        """data: (points_km_relative_to_body, body_name) or None to clear."""
+        if data is None: self.pred_pts = None; self.pred_body = None
+        else: self.pred_pts, self.pred_body = data

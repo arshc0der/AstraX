@@ -21,6 +21,12 @@ from ui.telemetry import TelemetryPanel
 from ui.education import EducationPanel
 from ui.sim_worker import SimWorker
 from ui.video import ViewportRecorder, screenshot
+from ui.emergency_panel import EmergencyPanel
+from ui.orbit_panel import OrbitPanel
+from ui.survival_dialog import SurvivalDialog
+from ui.extra_windows import ViewWindow, GraphWindow
+from ui.settings_dialog import SettingsDialog
+from ui.theme import build_style, THEMES
 
 log = logging.getLogger("astrax")
 SPEEDS = ["0.1x", "0.5x", "1x", "2x", "5x", "10x", "50x", "100x", "1000x", "Custom..."]
@@ -28,8 +34,9 @@ SPEEDS = ["0.1x", "0.5x", "1x", "2x", "5x", "10x", "50x", "100x", "1000x", "Cust
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__(); self.setWindowTitle(f"AstraX {__version__} - Spaceflight Simulation Laboratory"); self.resize(1500, 900); self.setMinimumSize(900, 600); self.setStyleSheet(STYLE)
-        self.log_path = setup_logging(); self.settings = QSettings("AstraX", "AstraX2")
+        super().__init__(); self.setWindowTitle(f"AstraX {__version__} - Spaceflight Simulation Laboratory"); self.resize(1500, 900); self.setMinimumSize(900, 600); pass
+        self.log_path = setup_logging(); self.settings = QSettings("AstraX", "AstraX2"); self.extra = []; self._dialogs = []
+        self.prefs = self._load_prefs(); self.setStyleSheet(build_style(self.prefs['theme'], self.prefs['font_pt']))
         self.system = SolarSystem(); self.rocket = default_rocket(); self.cfg = SimConfig(method="rk4", dt_mode="auto")
         L, plan = earth_leo(); self.launch, self.plan = L, plan; self.worker = None; self.runtime = None; self.sim = None; self.rec = None
         self._frames = 0; self._fps = 0.0; self._fps_t = 0.0; self._last_events = 0
@@ -39,22 +46,27 @@ class MainWindow(QMainWindow):
         self.viewport = SpaceViewport(); box = QWidget(); g = QGridLayout(box); g.setContentsMargins(0, 0, 0, 0); g.addWidget(self.viewport, 0, 0)
         self.overlay = QLabel(""); self.overlay.setObjectName("mono"); self.overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents); self.overlay.setStyleSheet("background: rgba(10,14,19,160); padding: 6px; border-radius: 4px;")
         g.addWidget(self.overlay, 0, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.banner = QLabel(""); self.banner.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents); self.banner.setVisible(False)
+        g.addWidget(self.banner, 0, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter); self._banner_timer = QTimer(self); self._banner_timer.setSingleShot(True); self._banner_timer.timeout.connect(lambda: self.banner.setVisible(False))
         self.designer = RocketDesigner(self.rocket); self.education = EducationPanel(lambda: self.rocket, lambda: self.system)
         self.tabs.addTab(box, make_icon("planet"), "Simulation"); self.tabs.addTab(self._scroll(self.designer), make_icon("rocket"), "Rocket designer"); self.tabs.addTab(self._scroll(self.education), "Learn")
-        self.designer.rocket_changed.connect(self._rocket_edited); self.designer.use_in_simulation.connect(self._use_rocket)
+        self.designer.rocket_changed.connect(self._rocket_edited); self.designer.use_in_simulation.connect(self._use_rocket); self.designer.survival_requested.connect(self.open_survival)
 
         # docks
         self.explorer = QTreeWidget(); self.explorer.setHeaderHidden(True); self.explorer.itemDoubleClicked.connect(self._explorer_focus)
         self._dock("Explorer", self.explorer, Qt.DockWidgetArea.LeftDockWidgetArea)
         self.planets = PlanetInspector(self.system); self.planets.changed.connect(self._planet_changed); self.planets.selected.connect(self._planet_selected)
         self.mission = MissionPanel([b.name for b in self.system.bodies]); self.mission.scenario_applied.connect(self._scenario_applied); self.mission.script_requested.connect(self._script)
-        self.rtabs = QTabWidget(); self.rtabs.addTab(self._scroll(self.mission), "Mission control"); self.rtabs.addTab(self._scroll(self.planets), "Planet inspector")
+        self.rtabs = QTabWidget(); self.emergency = EmergencyPanel(lambda: self.worker, lambda: self.cfg); self.orbit = OrbitPanel(lambda: self.worker, lambda: self.rec)
+        self.rtabs.addTab(self._scroll(self.mission), "Mission control"); self.rtabs.addTab(self._scroll(self.planets), "Planet inspector")
+        self.rtabs.addTab(self._scroll(self.emergency), "Flight safety"); self.rtabs.addTab(self._scroll(self.orbit), "Orbit analysis")
         self.d_right = self._dock("Properties & Mission", self.rtabs, Qt.DockWidgetArea.RightDockWidgetArea); self.d_right.setMinimumWidth(320)
         self.telemetry = TelemetryPanel(); self.d_tel = self._dock("Telemetry & timeline", self._scroll(self.telemetry), Qt.DockWidgetArea.BottomDockWidgetArea); self.d_tel.setMinimumHeight(150)
         self.console = QTextEdit(); self.console.setReadOnly(True); self.d_con = self._dock("Event log", self.console, Qt.DockWidgetArea.BottomDockWidgetArea); self.tabifyDockWidget(self.d_tel, self.d_con); self.d_tel.raise_()
 
         self._build_toolbar(); self._build_menus(); self._build_statusbar()
         self.viewport.init_bodies(self.system); self.viewport.refresh_orbits(); self.viewport.set_rocket(self.rocket)
+        self.viewport.trail_len = self.prefs["trail_len"]; self.viewport.body_scale = self.prefs["body_scale"]; self.viewport.show_plume = self.prefs["plume"]
         self.recorder_video = ViewportRecorder(self.viewport)
         self.rebuild_simulation(); self._fill_explorer()
         st = self.settings.value("layout")
@@ -90,7 +102,7 @@ class MainWindow(QMainWindow):
         self.dtmode = QComboBox(); self.dtmode.addItems(["auto", "fixed"]); self.dtmode.setToolTip("auto: timestep chosen from orbit/atmosphere resolution; fixed: your value, with stability warnings"); self.dtmode.currentTextChanged.connect(self._cfg_changed); tb.addWidget(self.dtmode)
         self.dt = QDoubleSpinBox(); self.dt.setRange(0.0005, 3600); self.dt.setDecimals(4); self.dt.setValue(0.05); self.dt.setSuffix(" s"); self.dt.setToolTip("Physics timestep (independent of playback speed)"); self.dt.editingFinished.connect(self._cfg_changed); tb.addWidget(self.dt)
         tb.addSeparator(); tb.addWidget(QLabel(" Camera "))
-        self.cam = QComboBox(); self.cam.addItems(["Orbit", "Free", "Follow rocket", "Follow selected body", "First person (rocket)"]); self.cam.currentIndexChanged.connect(self._camera_mode); tb.addWidget(self.cam)
+        self.cam = QComboBox(); self.cam.addItems(["Orbit", "Free", "Follow rocket", "Follow selected body", "First person (rocket)", "Launch camera"]); self.cam.currentIndexChanged.connect(self._camera_mode); tb.addWidget(self.cam)
         for txt, v in (("Top", "top"), ("Side", "side"), ("Front", "front"), ("Iso", "iso")): tb.addAction(self._act(txt, lambda _=False, v=v: self.viewport.set_view(v), None, None, f"{txt} view"))
         tb.addAction(self._act("Reset cam", self.viewport.reset_camera, None, "Home", "Reset camera")); tb.addAction(self._act("Focus", self._focus_selected, None, "F", "Focus on selected object"))
         tb.addSeparator(); self.a_rec = self._act("Record", self.toggle_record, "record", None, "Record the viewport to GIF/MP4", True); tb.addAction(self.a_rec); tb.addAction(self._act("Snapshot", self.take_snapshot, "camera", None, "Save a PNG of the viewport"))
@@ -105,7 +117,8 @@ class MainWindow(QMainWindow):
             a = self._act(name, lambda c, n=name: self.viewport.set_layer(n, c), checkable=True); a.setChecked(self.viewport.layers[name]); lm.addAction(a)
         v.addAction(self._act("Body size exaggeration...", self._body_scale)); v.addAction(self._act("Reset window layout", self._reset_layout))
         for d in (self.d_right, self.d_tel, self.d_con): v.addAction(d.toggleViewAction())
-        t = self.menuBar().addMenu("&Tools"); t.addAction(self._act("Open logs folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(os.path.dirname(self.log_path))))))
+        wm = self.menuBar().addMenu("&Window"); wm.addAction(self._act("New 3D view window", self.new_view)); wm.addAction(self._act("New graph window", self.new_graph)); wm.addAction(self._act("Close all extra windows", self.close_extra))
+        t = self.menuBar().addMenu("&Tools"); t.addAction(self._act("Design survival test...", self.open_survival)); t.addAction(self._act("Settings & customisation...", self.open_settings)); t.addSeparator(); t.addAction(self._act("Open logs folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(os.path.dirname(self.log_path))))))
         h = self.menuBar().addMenu("&Help"); h.addAction(self._act("About AstraX", lambda: QMessageBox.about(self, "AstraX", f"AstraX {__version__}\nOpen-source (MIT) spaceflight simulation laboratory.\nResults are NOT validated mission predictions.")))
 
     def _build_statusbar(self):
@@ -117,11 +130,17 @@ class MainWindow(QMainWindow):
     def rebuild_simulation(self):
         if self.worker: self.worker.quit_thread(); self.worker.wait(2000)
         self.sim = Simulation(self.system, self.rocket, self.launch, self.plan, self.cfg); self.runtime = MissionRuntime(self.sim, self._log)
-        self.rec = Recorder(self.cfg.record_interval_s); self.rec.maybe_record(self.sim, True)
+        self.cfg.record_interval_s = self.prefs["record_interval_s"]; self.rec = Recorder(self.cfg.record_interval_s); self.rec.maybe_record(self.sim, True)
         self.worker = SimWorker(self.sim, self.rec, self.runtime); self.worker.snapshot.connect(self.on_snapshot); self.worker.finished_run.connect(self._run_finished)
+        self.worker.prediction.connect(self.viewport.set_prediction); self.worker.preview.connect(self.orbit.show_preview); self.viewport.set_prediction(None)
+        for w in self.extra:
+            if isinstance(w, ViewWindow): w.rebuild(self.system, self.rocket)
         self.telemetry.set_recorder(self.rec, self.launch.target_body); self.viewport.clear_trail(); self.viewport.refresh_orbits()
         self.viewport.focus = "Rocket" if self.launch.start_mode == "pad" else "Earth"; self._speed_changed(self.speed.currentText()); self.worker.start()
         self._last_events = 0; self.a_play.setText("Run"); self.a_play.setIcon(make_icon("play")); log.info("Simulation rebuilt: %s", self.rocket.name)
+
+    def show_banner(self, text, color):
+        self.banner.setText(text); self.banner.setStyleSheet(f"font-size: 20pt; font-weight: 800; color: {color}; background: rgba(5,8,12,200); padding: 8px 22px; border: 2px solid {color}; border-radius: 8px;"); self.banner.setVisible(True); self._banner_timer.start(4000)
 
     def _log(self, msg): self.console.append(f"<span style='color:#7e8b9a'>{datetime.datetime.now():%H:%M:%S}</span> {msg}"); log.info(msg)
 
@@ -151,7 +170,10 @@ class MainWindow(QMainWindow):
         self.sim.cfg = self.cfg; self.dt.setEnabled(self.cfg.dt_mode == "fixed")
 
     # ---------------- model edits ----------------
-    def _rocket_edited(self, rocket): self.viewport.set_rocket(rocket); self.rocket = rocket
+    def _rocket_edited(self, rocket):
+        self.viewport.set_rocket(rocket); self.rocket = rocket
+        for w in self.extra:
+            if isinstance(w, ViewWindow): w.vp.set_rocket(rocket)
     def _use_rocket(self, rocket): self.rocket = rocket; self.viewport.set_rocket(rocket); self.rebuild_simulation(); self.tabs.setCurrentIndex(0); self._fill_explorer()
     def _planet_changed(self, name): self.rebuild_simulation(); self._log(f"Planet data edited: {name} - simulation restarted")
     def _planet_selected(self, name): self.selected_body = name
@@ -164,7 +186,8 @@ class MainWindow(QMainWindow):
 
     # ---------------- snapshots ----------------
     def on_snapshot(self, s):
-        self.viewport.update_scene(s); self.telemetry.update_live(s); tm = s["tm"]
+        self.viewport.update_scene(s); self.telemetry.update_live(s); self.emergency.update_snapshot(s); self.orbit.update_snapshot(s); tm = s["tm"]
+        for w in self.extra: w.on_snapshot(s)
         self.overlay.setText(f"{tm['status']}   T+{tm['met_s']:,.0f}s   {tm['body']}  alt {tm['altitude_m'] / 1e3:,.1f} km   v {tm['speed_mps']:,.0f} m/s   {self.viewport.overlay_text}" if self.viewport.layers["Info overlay"] else "")
         self.l_time.setText(f"  Sim time: {datetime.timedelta(seconds=int(s['t']))}  "); self.l_met.setText(f"MET: {tm['met_s']:,.1f}s  ")
         self.l_acc.setText(f"Accel: requested {s['accel']:g}x / achieved {s['achieved']:.3g}x  "); self.l_dt.setText(f"dt: {s['dt']:.4g}s ({self.cfg.method})  "); self.l_perf.setText(f"Physics: {s['sps']:,.0f} steps/s  ")
@@ -174,12 +197,16 @@ class MainWindow(QMainWindow):
         slow = (not s["paused"]) and s["achieved"] < 0.9 * s["accel"]
         w = list(s["warnings"]) + (["Playback limited by CPU: physics NOT coarsened - running slower than requested."] if slow else [])
         self.l_warn.setText(f"<span style='color:#fbbf24'>{w[0]}</span>" if w else "<span style='color:#34d399'>numerics OK</span>")
-        for t, m in self.sim.events[self._last_events:]: self._log(f"T+{t:,.1f}s  {m}")
+        for t, m in self.sim.events[self._last_events:]:
+            self._log(f"T+{t:,.1f}s  {m}")
+            for key, txt, col in (("VEHICLE LOST", "VEHICLE LOST", "#f87171"), ("LIFTOFF", "LIFTOFF", "#34d399"), ("STAGE SEPARATION", "STAGE SEPARATION", "#2aa9ff"), ("ABORT", "ABORT", "#fbbf24"),
+                                  ("PARACHUTE", "PARACHUTE DEPLOYED", "#2aa9ff"), ("LANDED", "TOUCHDOWN", "#34d399"), ("CRASHED", "CRASHED", "#f87171"), ("WARNING", "LOAD WARNING", "#fbbf24")):
+                if key in m: self.show_banner(txt + (": " + m.split(": ", 1)[1] if key == "VEHICLE LOST" and ": " in m else ""), col); break
         self._last_events = len(self.sim.events)
 
     # ---------------- camera / explorer ----------------
     def _camera_mode(self, i):
-        self.viewport.set_mode(["orbit", "free", "follow_rocket", "follow_body", "first_person"][i])
+        self.viewport.set_mode(["orbit", "free", "follow_rocket", "follow_body", "first_person", "launch"][i])
         if i == 3: self._focus_selected()
 
     def _focus_selected(self): self.viewport.focus_on(getattr(self, "selected_body", "Earth"))
@@ -227,6 +254,42 @@ class MainWindow(QMainWindow):
     def take_snapshot(self):
         p, _ = QFileDialog.getSaveFileName(self, "Save snapshot", "astrax.png", "PNG (*.png)")
         if p: screenshot(self.viewport, p)
+
+    # ---------------- survival test / extra windows / settings ----------------
+    def open_survival(self):
+        dlg = SurvivalDialog(self.designer.rocket, self.system, self); dlg.watch_requested.connect(self.watch_launch); self._dialogs = [dlg]; dlg.show()
+
+    def watch_launch(self, rocket, kick):
+        from astrax.missions import earth_leo
+        self.rocket = copy.deepcopy(rocket); L, plan = earth_leo(200e3, kick); self.launch, self.plan = L, plan
+        self.mission.set_scenario(L, plan); self.viewport.set_rocket(self.rocket); self.rebuild_simulation(); self.tabs.setCurrentIndex(0)
+        self.cam.setCurrentIndex(5); self.speed.setCurrentText("2x"); self.toggle_run(); self._fill_explorer()
+
+    def new_view(self):
+        w = ViewWindow(f"3D view {len(self.extra) + 1}", self.system, self.rocket, self); self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, w); w.setFloating(True); w.show(); self.extra.append(w)
+
+    def new_graph(self):
+        w = GraphWindow(f"Graph {len(self.extra) + 1}", lambda: self.rec, "altitude_m", self); self.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, w); w.setFloating(True); w.show(); self.extra.append(w)
+
+    def close_extra(self):
+        for w in self.extra: w.close(); self.removeDockWidget(w); w.deleteLater()
+        self.extra = []
+
+    def _load_prefs(self):
+        g = self.settings.value
+        return dict(theme=g("theme", "Mission control (dark)"), font_pt=int(g("font_pt", 10)), trail_len=int(g("trail_len", 3000)), body_scale=float(g("body_scale", 1.0)),
+                    plume=str(g("plume", "true")).lower() == "true", record_interval_s=float(g("record_interval_s", 1.0)))
+
+    def open_settings(self):
+        dlg = SettingsDialog(self.prefs, self); dlg.applied.connect(self._apply_prefs); self._dialogs = [dlg]; dlg.show()
+
+    def _apply_prefs(self, p):
+        self.prefs = p
+        for k, v in p.items(): self.settings.setValue(k, v)
+        self.setStyleSheet(build_style(p["theme"], p["font_pt"]))
+        for vp in [self.viewport] + [w.vp for w in self.extra if isinstance(w, ViewWindow)]:
+            vp.trail_len = p["trail_len"]; vp.body_scale = p["body_scale"]; vp.show_plume = p["plume"]
+        self.cfg.record_interval_s = p["record_interval_s"]
 
     def _reset_layout(self): self.settings.remove("layout"); QMessageBox.information(self, "Layout", "Layout will reset on next start.")
     def closeEvent(self, e):

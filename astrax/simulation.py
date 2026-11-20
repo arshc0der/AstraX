@@ -17,6 +17,7 @@ import numpy as np
 from .constants import G, G0, DEG
 from . import integrators as integ
 from .atmosphere import density, pressure
+from . import aero, structure
 from .bodies import SolarSystem
 from .orbital import state_to_elements
 from .rocket import Rocket, default_rocket
@@ -51,6 +52,7 @@ class Phase:
     target_alt_m: float = 0.0          # used by mode 'ascent_hold'
     until: dict = field(default_factory=dict)         # duration_s, dv_mps, apoapsis_alt_m, periapsis_alt_m,
                                                       # at_apoapsis, burnout, altitude_m, speed_mps
+    q_limit_pa: float = 0.0            # >0: throttle down to keep dynamic pressure near this value ("max-Q bucket")
 
 
 @dataclass
@@ -63,6 +65,10 @@ class SimConfig:
     rtol: float = 1e-10                # dopri5 only
     landing_speed_mps: float = 10.0    # max relative speed counted as a soft landing
     record_interval_s: float = 1.0
+    aero: str = "advanced"             # advanced: Cd(Mach) + angle-of-attack normal force | simple: constant Cd
+    protect: bool = True               # autopilot throttles down to respect design g / max-Q limits (min throttle 40%)
+    failures: bool = True              # structural / thermal / control failures destroy the vehicle
+    post_failure_s: float = 120.0      # keep simulating debris this long after a breakup
 
 
 class Simulation:
@@ -89,6 +95,17 @@ class Simulation:
         self.stages = copy.deepcopy(self.rocket.stages)
         self.jettisoned = []
         self.m = self.rocket.total_mass()
+        self.faults = dict(engines_out=0, leak_kg_s=0.0, stuck_throttle=None, guidance_lost=False, engine_cutoff=False)
+        self.debris = []; self.destroyed_t = None; self.failure_reason = ""; self.capsule = False; self.chute_area = 0.0; self.chute_open = False
+        self.peak = dict(q=0.0, g=0.0, heat=0.0, stress_ratio=0.0, mach=0.0, aoa=0.0, bending=0.0, q_ratio=0.0, g_ratio=0.0, heat_ratio=0.0)
+        self.loads = {}; self.orbit_log = []; self.aoa_dist = 0.0; self.rng = np.random.default_rng(42); self.explosion = None; self._debris_acc = 0.0
+        self._warned = set(); self.last_drag = 0.0
+        if self.rocket.cores:
+            est = self.rocket.estimates(); self.cn_alpha = self.rocket.cn_alpha(); self.static_margin = est["static_margin_cal"]; self._z_cp = est["cop_m"]
+        else: self.cn_alpha, self.static_margin, self._z_cp = 2.0, 0.0, 0.0
+        lay = {id(o): zb for o, zb, zt in self.rocket.stack_layout()}
+        self._zb = {id(c): lay.get(id(o), 0.0) for o, c in zip(self.rocket.stages, self.stages)}
+        tv = self.rng.normal(size=3); self._tumble_axis = tv / np.linalg.norm(tv)
         self.ref_area = self.rocket.reference_area_m2
         self.status = "PAD"
         self.throttle = 0.0
@@ -105,10 +122,24 @@ class Simulation:
         else:
             self._hold_on_surface()
         self._log(f"Initialised: {self.rocket.name}, launch from {self.launch.body}, mode {self.launch.start_mode}")
+        self._log_orbit("start")
         if self.plan: self._enter_phase(0)
 
     def _log(self, msg):
         self.events.append((self.t, msg))
+
+    def terminal(self) -> bool:
+        """True when the run is over (landed, crashed, or breakup debris has had time to fall)."""
+        if self.status in ("LANDED", "CRASHED"): return True
+        return self.status == "DESTROYED" and self.destroyed_t is not None and self.t - self.destroyed_t > self.cfg.post_failure_s
+
+    def _log_orbit(self, label):
+        """Remember the osculating orbit about the dominant body at an event (for the orbit-change report)."""
+        i = self.dominant_index(); rr, vv = self.rp - self.bp[i], self.rv - self.bv[i]; el = state_to_elements(rr, vv, self.gm[i])
+        R = self.radii[i]
+        self.orbit_log.append(dict(met=self.met, label=label, body=self.names[i], a=el["a"], e=el["e"], inc=el["inc"],
+                                   peri_alt=el["rp"] - R, apo_alt=(el["ra"] - R) if math.isfinite(el["ra"]) else math.inf,
+                                   speed=float(np.linalg.norm(vv)), alt=float(np.linalg.norm(rr) - R)))
 
     # ------------------------------------------------------- body rotation helpers
     def _body_frame(self, i):
@@ -176,17 +207,23 @@ class Simulation:
         if core is not None and core.propellant_kg > 0: group.append(core)
         return group
 
+    def _stage_flow(self, s, throttle):
+        """(F_vac, mdot, F_sl) of one stage group incl. faults (engine-out, cutoff)."""
+        if self.faults["engine_cutoff"]: return 0.0, 0.0, 0.0
+        n = s.booster_count if s.kind == "booster" else 1; f = 1.0
+        first = next((x for x in self.stages if x.kind == "core"), None)
+        if s is first and self.faults["engines_out"] > 0: f = max(0.0, (s.engine.count - self.faults["engines_out"]) / s.engine.count)
+        k = n * throttle * f
+        return s.engine.total_thrust_vac * k, s.engine.mdot * k, s.engine.thrust_sl * k
+
     def engine_params(self, throttle):
         """(F_vac [N], mdot [kg/s], Isp_vac_eff, Isp_sl_eff) of the active group at given throttle."""
-        F = md = 0.0; fs = 0.0
+        F = md = fs = 0.0
         for s in self.active_group():
-            n = s.booster_count if s.kind == "booster" else 1
-            F += s.engine.total_thrust_vac * n; md += s.engine.mdot * n; fs += s.engine.thrust_sl * n
-        F *= throttle; md *= throttle; fs *= throttle
+            a_, b_, c_ = self._stage_flow(s, throttle); F += a_; md += b_; fs += c_
         if md <= 0: return 0.0, 0.0, 0.0, 0.0
         return F, md, F / (md * G0), fs / (md * G0)
 
-    # --------------------------------------------------------------- dynamics
     def _body_acc(self, bp):
         """N-body accelerations of all bodies, vectorised: a_i = sum_j GM_j (r_j - r_i)/|r_ij|^3."""
         d = bp[None, :, :] - bp[:, None, :]
@@ -210,10 +247,23 @@ class Simulation:
             rel = rp - bp[i]; w = b.omega * b.spin_axis()
             v_air = rv - bv[i] - np.cross(w, rel); sp = np.linalg.norm(v_air)
             if sp > 0 and rho > 0:
-                cd = self.rocket.cd
-                drag = 0.5 * rho * cd * self.ref_area * sp * sp
-                acc = acc - (drag / m) * (v_air / sp)
+                vh = v_air / sp; cd, area = self._cd_area(b, alt, sp)
+                drag = 0.5 * rho * cd * area * sp * sp
+                acc = acc - (drag / m) * vh
+                if self.cfg.aero == "advanced" and not (self.capsule and self.chute_open):
+                    ca = float(np.clip(np.dot(dirn, vh), -1.0, 1.0)); sa = math.sqrt(max(0.0, 1 - ca * ca))
+                    if sa > 1e-6:      # normal force pushes the vehicle against the cross-flow component
+                        n_hat = -(vh - ca * dirn) / sa
+                        acc = acc + (0.5 * rho * sp * sp * area * self.cn_alpha * sa * ca / m) * n_hat
         return acc, thrust, drag
+
+    def _cd_area(self, b, alt, sp):
+        """(Cd, reference area) for the current configuration (Mach-dependent when aero='advanced')."""
+        if self.capsule:
+            return (1.5, self.chute_area) if self.chute_open else (1.2, math.pi * (self.rocket.nose.base_diameter_m / 2) ** 2)
+        cd = self.rocket.cd
+        if self.cfg.aero == "advanced": cd *= aero.cd_factor(sp / aero.speed_of_sound(b, alt))
+        return cd, self.ref_area
 
     def _deriv_factory(self, dirn, throttle, F_vac, mdot, isp_v, isp_s):
         N = len(self.gm)
@@ -314,7 +364,7 @@ class Simulation:
         if k < len(self.plan):
             self.phase_t0 = self.t; self.phase_dv0 = self.dv_spent
             self._log(f"Phase {k + 1}: {self.plan[k].name} ({self.plan[k].mode})")
-            self._prev_rad_speed = None
+            self._prev_rad_speed = None; self._log_orbit(self.plan[k].name)
 
     def _phase_done(self, ph: Phase):
         u = ph.until
@@ -346,14 +396,17 @@ class Simulation:
         if atm:
             sp = max(1.0, np.linalg.norm(self.rv - self.bv[atm[0]])); H = self.system.bodies[atm[0]].atmosphere.scale_height_m
             dt = min(dt, 0.05 * H / sp)
+            cd_, area_ = self._cd_area(self.system.bodies[atm[0]], atm[1], sp)        # drag relaxation time m/(rho Cd A v): keeps RK4 stable under a parachute
+            if atm[2] > 0: dt = min(dt, 0.2 * self.m / max(atm[2] * cd_ * area_ * sp, 1e-9))
         if self.throttle > 0: dt = min(dt, 0.1)
         if self.status == "PAD": dt = min(dt, 0.05)
         return float(max(self.cfg.dt_min_s, min(self.cfg.dt_max_s, dt)))
 
     def step(self, dt=None):
         """Advance by (up to) dt seconds. Returns the time actually advanced."""
-        if self.status in ("LANDED", "CRASHED"):
-            self._track_surface(); return 0.0
+        if self.terminal():
+            if self.status in ("LANDED", "CRASHED"): self._track_surface()
+            return 0.0
         dt = dt or (self.auto_dt() if self.cfg.dt_mode == "auto" else self.cfg.dt_s)
         ph = self.plan[self.phase_idx] if 0 <= self.phase_idx < len(self.plan) else None
         # phase transitions
@@ -366,6 +419,25 @@ class Simulation:
             p_, h_ = pit * DEG, hdg * DEG
             direction = math.sin(p_) * up + math.cos(p_) * (math.cos(h_) * north + math.sin(h_) * east)
             throttle = float(max(0.0, min(1.0, thr)))
+        if ph is not None and ph.q_limit_pa > 0:      # max-Q bucket: reduce throttle while q exceeds the limit
+            q_now = self._q_now()
+            if q_now > ph.q_limit_pa: throttle = min(throttle, max(0.55, 1.0 - (q_now - ph.q_limit_pa) / (0.25 * ph.q_limit_pa)))
+        if self.cfg.protect and throttle > 0 and not self.capsule:
+            # autopilot load protection (real vehicles throttle down for max-Q and late in the burn to cap acceleration)
+            Lm = self.rocket.limits; F_full = self.engine_params(1.0)[0]
+            if F_full > 0: throttle = min(throttle, max(0.4, 0.95 * Lm.max_axial_g * G0 * self.m / F_full))
+            q_now = self._q_now()
+            if q_now > 0.9 * Lm.max_q_pa: throttle = min(throttle, max(0.55, 1.0 - (q_now - 0.9 * Lm.max_q_pa) / (0.25 * Lm.max_q_pa)))
+        f_ = self.faults
+        if f_["guidance_lost"]: direction = self.direction
+        if f_["stuck_throttle"] is not None: throttle = f_["stuck_throttle"]
+        if f_["engine_cutoff"] or self.capsule: throttle = 0.0
+        if not self.rocket.active_control and self.static_margin < 0 and self.status == "FLYING" and not self.capsule and self._q_now() > 500.0:
+            tau = max(1.5, 6.0 / (abs(self.static_margin) + 0.1))     # aerodynamically unstable and uncontrolled: attitude error grows
+            self.aoa_dist = min(math.pi, max(self.aoa_dist, math.radians(0.3)) * math.exp(dt / tau))
+        if self.aoa_dist > 0:
+            perp = self._tumble_axis - np.dot(self._tumble_axis, direction) * direction; nn = np.linalg.norm(perp)
+            if nn > 1e-9: direction = direction * math.cos(self.aoa_dist) + perp / nn * math.sin(self.aoa_dist)
         # time-based staging
         self._auto_stage_time()
         F_vac, mdot, isp_v, isp_s = self.engine_params(throttle)
@@ -374,7 +446,7 @@ class Simulation:
         if mdot > 0:
             for s in self.active_group():
                 n = s.booster_count if s.kind == "booster" else 1
-                md_s = s.engine.mdot * n * throttle
+                md_s = self._stage_flow(s, throttle)[1]
                 if md_s > 0:
                     te = s.propellant_kg / md_s
                     if te > 1e-9: h = min(h, te)
@@ -390,9 +462,14 @@ class Simulation:
         if mdot > 0:
             for s in self.active_group():
                 n = s.booster_count if s.kind == "booster" else 1
-                s.propellant_kg = max(0.0, s.propellant_kg - s.engine.mdot * n * throttle * h)
+                s.propellant_kg = max(0.0, s.propellant_kg - self._stage_flow(s, throttle)[1] * h)
             m_prev = self.m + mdot * h
             self.dv_spent += isp_v * G0 * math.log(m_prev / self.m) if self.m > 0 else 0.0
+        leak = self.faults["leak_kg_s"]
+        if leak > 0:                                    # propellant leak: mass lost with no thrust
+            core = next((x for x in self.stages if x.kind == "core" and x.propellant_kg > 0), None)
+            if core is not None:
+                lost = min(core.propellant_kg, leak * h); core.propellant_kg -= lost; self.m -= lost
         self.met += h
         if self.status == "PAD":
             self._hold_on_surface()
@@ -410,6 +487,8 @@ class Simulation:
         self.m -= (stage.dry_mass_kg + stage.propellant_kg) * n
         self.stages.remove(stage); self.jettisoned.append(stage)
         self._log(f"STAGE SEPARATION: {stage.name} ({reason}); mass now {self.m:,.0f} kg")
+        self._spawn_stage_debris(stage, n, reason)
+        self._log_orbit(f"after {stage.name} separation")
         cores = [s for s in self.stages if s.kind == "core"]
         if cores or self.stages:
             self.ref_area = math.pi * (max([s.diameter_m for s in self.stages if s.kind == "core"] or [self.rocket.nose.base_diameter_m]) / 2) ** 2
@@ -424,27 +503,10 @@ class Simulation:
             if core and len([s for s in self.stages if s.kind == "core"]) > 1: self.separate(core, "manual")
 
     def _post_step(self, h, throttle, mdot, F_vac, isp_v, isp_s):
-        # automatic burnout staging
-        for s in list(self.stages):
-            if s.propellant_kg <= 1e-6 and s.separation == "burnout":
-                if s.kind == "booster" or len([x for x in self.stages if x.kind == "core"]) > 1:
-                    self.separate(s, "burnout")
-        # surface contact (any body)
-        if self.status == "FLYING":
-            d = np.linalg.norm(self.bp - self.rp, axis=1) - self.radii
-            i = int(np.argmin(d))
-            if d[i] <= 0:
-                b = self.system.bodies[i]; rel = self.rp - self.bp[i]
-                w = b.omega * b.spin_axis(); vs = np.linalg.norm(self.rv - self.bv[i] - np.cross(w, rel))
-                landing = vs <= self.cfg.landing_speed_mps and (self.rocket.cores and True)
-                self.status = "LANDED" if landing else "CRASHED"
-                self.li = i; Bf = self._body_frame(i)
-                u = rel / np.linalg.norm(rel)
-                self._site_body_vec = (Bf @ self._rot_z(b.omega * self.t)).T @ u
-                self._contact_radius = b.radius_m
-                self._log(f"{self.status} on {b.name} at {vs:.1f} m/s relative speed")
-                self._track_surface()
-                self.throttle = 0.0
+        if self.capsule and not self.chute_open and self.status == "FLYING":
+            a_ = self.atmosphere_at(self.rp)
+            if a_ and a_[1] < 7000.0 and self._q_now() < 30e3:       # deploy below 7 km once dynamic pressure is survivable
+                self.chute_open = True; self._log(f"PARACHUTE deployed at {a_[1] / 1e3:.1f} km (area {self.chute_area:,.0f} m2)")
         # diagnostics
         atm = self.atmosphere_at(self.rp)
         if atm:
@@ -454,6 +516,34 @@ class Simulation:
         if mdot > 0:
             p = atm[3] if atm else 0.0
             self.last_thrust = mdot * G0 * (isp_v - (isp_v - isp_s) * min(1.0, p / P_SL))
+        self._loads_and_failures(h)
+
+        # automatic burnout staging
+        for s in list(self.stages):
+            if s.propellant_kg <= 1e-6 and s.separation == "burnout":
+                if s.kind == "booster" or len([x for x in self.stages if x.kind == "core"]) > 1:
+                    self.separate(s, "burnout")
+        # surface contact (any body)
+        if self.status in ("FLYING", "DESTROYED") and not self.terminal():
+            d = np.linalg.norm(self.bp - self.rp, axis=1) - self.radii
+            i = int(np.argmin(d))
+            if d[i] <= 0:
+                b = self.system.bodies[i]; rel = self.rp - self.bp[i]
+                w = b.omega * b.spin_axis(); vs = np.linalg.norm(self.rv - self.bv[i] - np.cross(w, rel))
+                was_destroyed = self.status == "DESTROYED"
+                if was_destroyed:
+                    self._log(f"Wreckage reached the surface of {b.name} at {vs:.0f} m/s"); self.destroyed_t = self.t - 1e9
+                else:
+                    landing = vs <= self.cfg.landing_speed_mps and (self.rocket.cores or self.capsule)
+                    self.status = "LANDED" if landing else "CRASHED"
+                    self._log(f"{self.status} on {b.name} at {vs:.1f} m/s relative speed" + (" - payload capsule recovered" if landing and self.capsule else ""))
+                    if not landing: self._explode(self.rp.copy(), self.rv.copy(), 50, (8.0, 60.0), up=rel / np.linalg.norm(rel), reason="impact")
+                self.li = i; Bf = self._body_frame(i)
+                u = rel / np.linalg.norm(rel)
+                self._site_body_vec = (Bf @ self._rot_z(b.omega * self.t)).T @ u
+                self._contact_radius = b.radius_m
+                self._track_surface(); self.throttle = 0.0
+        self._step_debris(h)
 
     def _track_surface(self):
         self.rp, self.rv = self.surface_state(self.li, self._site_body_vec, getattr(self, "_contact_radius", self.radii[self.li]))
@@ -462,7 +552,7 @@ class Simulation:
         """Advance by sim_seconds using the configured timestep. Stops early if the wall-clock
         budget runs out (accuracy is never reduced to catch up). Returns (advanced_s, completed)."""
         t_goal = self.t + sim_seconds; w0 = time.perf_counter(); adv0 = self.t
-        while self.t < t_goal - 1e-9 and self.status not in ("LANDED", "CRASHED"):
+        while self.t < t_goal - 1e-9 and not self.terminal():
             h = self.step(min(self.auto_dt() if self.cfg.dt_mode == "auto" else self.cfg.dt_s, t_goal - self.t))
             if h <= 0: break
             if hook is not None: hook(self)
@@ -522,7 +612,177 @@ class Simulation:
                     stage=next((s.name for s in self.stages if s.kind == "core"), "-"),
                     rp_x=float(self.rp[0]), rp_y=float(self.rp[1]), rp_z=float(self.rp[2]),
                     rel_x=float(rel_r[0]), rel_y=float(rel_r[1]), rel_z=float(rel_r[2]),
-                    dist_sun_m=float(np.linalg.norm(self.rp - self.bp[0])))
+                    dist_sun_m=float(np.linalg.norm(self.rp - self.bp[0])),
+                    mach=self.loads.get("mach", 0.0), aoa_deg=self.loads.get("aoa_deg", 0.0), heat_flux_w_m2=self.loads.get("heat", 0.0),
+                    stress_mpa=self.loads.get("stress", 0.0) / 1e6, stress_ratio=self.loads.get("stress_ratio", 0.0), drag_n=self.last_drag,
+                    q_ratio=self.loads.get("q_ratio", 0.0), g_ratio=self.loads.get("g_ratio", 0.0), heat_ratio=self.loads.get("heat_ratio", 0.0),
+                    axial_g=self.loads.get("axial_g", 0.0), faults=self.fault_text(), debris_count=sum(1 for d in self.debris if d["alive"]),
+                    failure_reason=self.failure_reason, chute=self.chute_open)
+
+    # ----------------------------------------------------- loads, failures, debris
+    def _q_now(self):
+        atm = self.atmosphere_at(self.rp)
+        if not atm: return 0.0
+        b = self.system.bodies[atm[0]]; w = b.omega * b.spin_axis()
+        v = self.rv - self.bv[atm[0]] - np.cross(w, self.rp - self.bp[atm[0]]); return 0.5 * atm[2] * float(v @ v)
+
+    def _loads_and_failures(self, h):
+        """Update aerodynamic / structural / thermal loads, peaks, warnings and trigger vehicle failure."""
+        if self.status != "FLYING" or self.capsule: return
+        atm = self.atmosphere_at(self.rp); L = self.rocket.limits
+        mach = aoa = q = heat = 0.0; D = 0.0; Fn = 0.0
+        if atm:
+            i, alt, rho, _ = atm; b = self.system.bodies[i]; w = b.omega * b.spin_axis()
+            v_air = self.rv - self.bv[i] - np.cross(w, self.rp - self.bp[i]); sp = float(np.linalg.norm(v_air)); q = 0.5 * rho * sp * sp
+            if sp > 1.0:
+                vh = v_air / sp; mach = sp / aero.speed_of_sound(b, alt)
+                cd, area = self._cd_area(b, alt, sp); D = q * cd * area
+                ca = float(np.clip(np.dot(self.direction, vh), -1, 1)); aoa = math.acos(ca)
+                if q < 100.0: aoa = 0.0           # angle of attack is meaningless in near-vacuum
+                if self.aoa_dist > 0: aoa = max(aoa, self.aoa_dist)
+                Fn = aero.normal_force(q, area, self.cn_alpha, aoa) if self.cfg.aero == "advanced" else 0.0
+                heat = aero.stagnation_heat_flux(b, rho, sp, self.rocket.nose_radius_m)
+        T = self.last_thrust; a_ax = (T - D) / self.m if self.m else 0.0; axial_g = abs(a_ax) / G0
+        # structure: combined stress at the base of each attached core tank section + booster thrust structure
+        worst = 0.0; stress_peak = 0.0; payload = self.rocket.payload_mass_kg + self.rocket.nose.mass_kg
+        cores = [x for x in self.stages if x.kind == "core"]
+        for k, st in enumerate(cores):
+            above = payload + sum(c.wet_mass for c in cores[k:])
+            sigma = structure.shell_stress(st, above * abs(a_ax), Fn * abs(self._z_cp - self._zb.get(id(st), 0.0)))
+            ratio = sigma / (structure.yield_strength(st) / L.factor_of_safety)
+            if ratio > worst: worst, stress_peak = ratio, sigma
+        for st in (x for x in self.stages if x.kind == "booster"):
+            sigma = structure.shell_stress(st, self._stage_flow(st, max(self.throttle, 0.0))[0] / max(st.booster_count, 1), 0.0)
+            ratio = sigma / (structure.yield_strength(st) / L.factor_of_safety)
+            if ratio > worst: worst, stress_peak = ratio, sigma
+        q_r, g_r, h_r = q / L.max_q_pa, axial_g / L.max_axial_g, heat / L.max_heat_flux_w_m2
+        self.loads = dict(mach=mach, aoa_deg=math.degrees(aoa), q=q, heat=heat, axial_g=axial_g, stress=stress_peak, stress_ratio=worst, q_ratio=q_r, g_ratio=g_r, heat_ratio=h_r, normal_force=Fn)
+        self.last_drag = D
+        pk = self.peak
+        for k_, v_ in (("q", q), ("g", axial_g), ("heat", heat), ("stress_ratio", worst), ("mach", mach), ("aoa", math.degrees(aoa)), ("q_ratio", q_r), ("g_ratio", g_r), ("heat_ratio", h_r)):
+            pk[k_] = max(pk[k_], v_)
+        for name, r_ in (("dynamic pressure", q_r), ("axial load factor", g_r), ("nose heating", h_r), ("structural stress", worst / L.factor_of_safety)):
+            if r_ > 1.0 and name not in self._warned: self._warned.add(name); self._log(f"WARNING: {name} above design limit ({r_ * 100:.0f}% of limit)")
+        if not self.cfg.failures: return
+        why = None
+        if q_r > L.fail_factor: why = f"aerodynamic overload (max-Q {q / 1e3:.0f} kPa vs {L.max_q_pa / 1e3:.0f} kPa limit)"
+        elif g_r > L.fail_factor: why = f"axial overload ({axial_g:.1f} g vs {L.max_axial_g:.1f} g limit)"
+        elif h_r > L.fail_factor: why = f"nose overheating ({heat / 1e3:.0f} kW/m2 vs {L.max_heat_flux_w_m2 / 1e3:.0f} kW/m2 limit)"
+        elif worst >= L.factor_of_safety: why = f"structural failure (skin stress {stress_peak / 1e6:.0f} MPa reached yield)"
+        elif self.aoa_dist > 0 and math.degrees(aoa) > L.max_aoa_deg and q > 1000.0: why = f"loss of control (angle of attack {math.degrees(aoa):.0f} deg at q = {q / 1e3:.1f} kPa)"
+        if why: self._destroy(why)
+
+    def _destroy(self, reason):
+        self.status = "DESTROYED"; self.destroyed_t = self.t; self.failure_reason = reason; self.throttle = 0.0; self.faults["engine_cutoff"] = True
+        self._log(f"VEHICLE LOST at T+{self.met:,.1f}s: {reason}")
+        self._explode(self.rp.copy(), self.rv.copy(), 45, (5.0, 55.0), reason="breakup")
+
+    def _spawn(self, name, pos, vel, mass, area, cd, kind):
+        if len(self.debris) > 400: self.debris = [d for d in self.debris if d["alive"]][-300:]
+        self.debris.append(dict(name=name, pos=np.array(pos, float), vel=np.array(vel, float), mass=mass, area=area, cd=cd, kind=kind, alive=True))
+
+    def _explode(self, pos, vel, n, speed_range, up=None, reason=""):
+        self.explosion = (self.t, pos)
+        for k in range(n):
+            v = self.rng.normal(size=3); v /= np.linalg.norm(v)
+            if up is not None: v = v + 1.5 * up; v /= np.linalg.norm(v)
+            self._spawn(f"fragment {k}", pos + v * 2.0, vel + v * self.rng.uniform(*speed_range), self.m / n, 1.0, 1.0, "fragment")
+
+    def _spawn_stage_debris(self, stage, n, reason):
+        d = self.direction / max(np.linalg.norm(self.direction), 1e-9); area = math.pi * (stage.diameter_m / 2) ** 2
+        for k in range(n):
+            lat = self.rng.normal(size=3) * (2.0 if n > 1 else 0.0)
+            self._spawn(f"{stage.name}" + (f" #{k + 1}" if n > 1 else ""), self.rp, self.rv - d * 2.0 + lat, stage.dry_mass_kg + stage.propellant_kg, area, 0.8, "stage")
+
+    def _step_debris(self, h):
+        if not self.debris: return
+        self._debris_acc += h
+        if self._debris_acc < 0.1: return
+        dt, self._debris_acc = self._debris_acc, 0.0
+        for d in self.debris:
+            if not d["alive"]: continue
+            dd = self.bp - d["pos"]; r2 = (dd ** 2).sum(1); acc = (dd * (self.gm / r2 ** 1.5)[:, None]).sum(0)
+            atm = self.atmosphere_at(d["pos"])
+            if atm:
+                b = self.system.bodies[atm[0]]; w = b.omega * b.spin_axis(); va = d["vel"] - self.bv[atm[0]] - np.cross(w, d["pos"] - self.bp[atm[0]]); sp = float(np.linalg.norm(va))
+                if sp > 0: acc = acc - 0.5 * atm[2] * d["cd"] * d["area"] * sp / d["mass"] * va
+            d["vel"] += acc * dt; d["pos"] += d["vel"] * dt
+            alt = float((np.linalg.norm(self.bp - d["pos"], axis=1) - self.radii).min())
+            if alt <= 0:
+                d["alive"] = False
+                if d["kind"] == "stage": self._log(f"{d['name']} impact (jettisoned stage) at T+{self.met:,.0f}s")
+
+    # ----------------------------------------------------- emergencies / abort
+    def fault_text(self):
+        f = self.faults; out = []
+        if f["engine_cutoff"]: out.append("ENGINE CUTOFF")
+        if f["engines_out"]: out.append(f"{f['engines_out']} engine(s) out")
+        if f["leak_kg_s"]: out.append(f"fuel leak {f['leak_kg_s']:.0f} kg/s")
+        if f["stuck_throttle"] is not None: out.append(f"throttle stuck {f['stuck_throttle']:.2f}")
+        if f["guidance_lost"]: out.append("guidance lost")
+        if self.capsule: out.append("ABORTED (capsule)")
+        return ", ".join(out) or "nominal"
+
+    def emergency(self, cmd, value=None):
+        """Inject a failure or trigger an emergency action. cmd: engine_out | engine_cutoff | fuel_leak | stuck_throttle |
+        guidance_loss | abort | clear."""
+        f = self.faults
+        if cmd == "engine_out": f["engines_out"] += 1
+        elif cmd == "engine_cutoff": f["engine_cutoff"] = True
+        elif cmd == "fuel_leak": f["leak_kg_s"] = value if value is not None else 300.0
+        elif cmd == "stuck_throttle": f["stuck_throttle"] = value if value is not None else 1.0
+        elif cmd == "guidance_loss": f["guidance_lost"] = True
+        elif cmd == "abort": self.abort(); return
+        elif cmd == "clear":
+            self.faults.update(engines_out=0, leak_kg_s=0.0, stuck_throttle=None, guidance_lost=False, engine_cutoff=(self.status == "DESTROYED")); self.aoa_dist = 0.0
+        self._log(f"EMERGENCY/FAULT: {cmd}" + (f" ({value})" if value is not None else ""))
+
+    def abort(self):
+        """Launch abort: cut engines, jettison every stage and leave the payload capsule on a ballistic path with a
+        parachute sized for ~7 m/s touchdown (simplified: instant separation, ideal 40 m/s abort-motor kick)."""
+        if self.capsule or self.status not in ("PAD", "FLYING"): return
+        self._log("ABORT commanded: engines cut, stages jettisoned, payload capsule escapes")
+        self.faults["engine_cutoff"] = True
+        for st in list(self.stages): self.separate(st, "ABORT")
+        self.capsule = True; d = self.direction / max(np.linalg.norm(self.direction), 1e-9)
+        if self.status == "FLYING": self.rv = self.rv + d * 40.0
+        g = self.gm[self.li] / self.radii[self.li] ** 2
+        rho0 = self.system.bodies[self.li].atmosphere.surface_density if self.system.bodies[self.li].atmosphere else 1.0
+        self.chute_area = 2 * self.m * g / (rho0 * 1.5 * 7.0 ** 2); self.status = "FLYING" if self.status == "FLYING" else "PAD"
+        if self.status == "PAD": self.status = "FLYING"
+
+    # ----------------------------------------------------- orbit-change tools
+    def _orbit_frame(self):
+        i = self.dominant_index(); r = self.rp - self.bp[i]; v = self.rv - self.bv[i]
+        rh = r / np.linalg.norm(r); vh = v / max(np.linalg.norm(v), 1e-12); nh = np.cross(r, v); nh /= max(np.linalg.norm(nh), 1e-12)
+        return i, rh, vh, nh
+
+    def maneuver_preview(self, dv_pro=0.0, dv_norm=0.0, dv_rad=0.0):
+        """Orbit elements before/after an ideal instantaneous burn (prograde, normal, radial components in m/s)."""
+        i, rh, vh, nh = self._orbit_frame(); r = self.rp - self.bp[i]; v = self.rv - self.bv[i]
+        v2 = v + dv_pro * vh + dv_norm * nh + dv_rad * rh
+        R = self.radii[i]; out = {}
+        for tag, vv in (("before", v), ("after", v2)):
+            el = state_to_elements(r, vv, self.gm[i]); el["peri_alt"] = el["rp"] - R; el["apo_alt"] = (el["ra"] - R) if math.isfinite(el["ra"]) else math.inf
+            out[tag] = el
+        out["body"] = self.names[i]; return out
+
+    def apply_impulse(self, dv_pro=0.0, dv_norm=0.0, dv_rad=0.0):
+        """Apply an ideal impulsive delta-v now (what-if tool; does not consume propellant)."""
+        i, rh, vh, nh = self._orbit_frame(); self.rv = self.rv + dv_pro * vh + dv_norm * nh + dv_rad * rh
+        self._log(f"IMPULSE applied: prograde {dv_pro:+.1f}, normal {dv_norm:+.1f}, radial {dv_rad:+.1f} m/s"); self._log_orbit("after impulse")
+
+    def predict(self, seconds, n_points=400, dv=(0.0, 0.0, 0.0)):
+        """Coast prediction of the CURRENT orbit (optionally after an impulse) on a copy of the simulation.
+        Returns positions relative to the dominant body, shape (n, 3) [m]."""
+        import copy
+        c = copy.deepcopy(self); c.plan = []; c.phase_idx = -1; c.script_ctrl = None; c.cfg.dt_mode = "auto"; c.cfg.failures = False; c.events = []
+        if any(dv): c.rv = c.rv + dv[0] * c._orbit_frame()[2] + dv[1] * c._orbit_frame()[3] + dv[2] * c._orbit_frame()[1]
+        c.faults["engine_cutoff"] = True; i0 = c.dominant_index(); pts = [c.rp - c.bp[i0]]
+        for _ in range(n_points):
+            c.advance(seconds / n_points); pts.append(c.rp - c.bp[i0])
+            if c.terminal(): break
+        return np.array(pts), c.names[i0]
 
     def total_energy_barycentric(self):
         """Conserved check quantity for the gravity-only N-body system (J): sum KE + PE of bodies."""

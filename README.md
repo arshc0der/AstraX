@@ -35,9 +35,12 @@
 - **Time controls:** 0.1x - 1000x + custom; separate timestep; stability warnings; honest "achieved vs requested" speed.
 - **Telemetry & analysis:** selectable graphs with units, run comparison, trajectory and travel-to-Sun/planet analysis, CSV / JSON session / Markdown report export.
 - **Logs & recording:** rotating run logs, event log, GIF/MP4 viewport recording, PNG snapshots.
+- **Survival & safety:** Mach-dependent aerodynamics, structural/thermal/control failure model, one-click **design survival test** with 3D replay, abort with parachute capsule, failure injection.
+- **Orbit analysis:** orbit change per event, maneuver planner, predicted path overlay.
+- **Customisation:** extra 3D/graph windows, themes, font size.
 - **Flight computer:** original Python `mission_loop()` API preserved.
 
-See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md). Example output: [`docs/examples/`](docs/examples/).
+**Start with the [User Guide](docs/USER_GUIDE.md).** Example output: [`docs/examples/`](docs/examples/).
 
 ---
 

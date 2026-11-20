@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QComboBox, QTextBrowser, QLabe
 from astrax.constants import G, G0
 from astrax.orbital import hohmann
 
-TOPICS = ["Gravity", "Orbital mechanics", "Rocket equation & staging", "Thrust-to-weight ratio", "Delta-v budget", "Orbital transfers (Hohmann)", "Atmospheric drag"]
+TOPICS = ["Gravity", "Orbital mechanics", "Rocket equation & staging", "Thrust-to-weight ratio", "Delta-v budget", "Orbital transfers (Hohmann)", "Atmospheric drag", "Aerodynamics: Mach, lift and heating", "Structural loads & failure modes", "Changing an orbit"]
 
 
 class EducationPanel(QWidget):
@@ -46,4 +46,24 @@ class EducationPanel(QWidget):
             q = 0.5 * density(earth, 11000) * 400 ** 2
             H += (f"<p>F<sub>d</sub> = &frac12; &rho; C<sub>d</sub> A v<sup>2</sup>; dynamic pressure q = &frac12; &rho; v<sup>2</sup>.</p><p>Your Cd = {r.cd}, A = {r.reference_area_m2:.2f} m<sup>2</sup>. At 11 km, 400 m/s: &rho; = {density(earth, 11000):.3f} kg/m<sup>3</sup>, q = {q / 1e3:.1f} kPa, drag = {q * r.cd * r.reference_area_m2 / 1e3:.0f} kN.</p>"
                   "<p><i>Model:</i> constant Cd; no Mach/angle-of-attack dependence, no lift. Earth uses US Standard Atmosphere 1976 densities.</p>")
+        elif t.startswith("Aerodynamics"):
+            from astrax import aero
+            a0 = aero.speed_of_sound(earth, 0); a11 = aero.speed_of_sound(earth, 11000)
+            H += (f"<p><b>Mach number</b> M = v / a, with speed of sound a = &radic;(&gamma; R T): {a0:.0f} m/s at sea level, {a11:.0f} m/s at 11 km (T = 216.65 K).</p>"
+                  f"<p><b>Drag</b> F<sub>d</sub> = &frac12; &rho; v<sup>2</sup> C<sub>d</sub>(M) A. C<sub>d</sub> is not constant: factor vs your base C<sub>d</sub> = {r.cd}: "
+                  f"M 0.3 &rarr; {aero.cd_factor(0.3):.2f}, M 0.9 &rarr; {aero.cd_factor(0.9):.2f}, <b>M 1.05 &rarr; {aero.cd_factor(1.05):.2f}</b> (transonic peak), M 3 &rarr; {aero.cd_factor(3):.2f}.</p>"
+                  f"<p><b>Lift / normal force</b> N = q A C<sub>N&alpha;</sub> sin&alpha; cos&alpha;. Your C<sub>N&alpha;</sub> (Barrowman est.) = {r.cn_alpha():.2f} per rad; centre of pressure {e['cop_m']:.1f} m vs centre of mass {e['com_m']:.1f} m &rArr; static margin {e['static_margin_cal']:.2f} calibres "
+                  f"({'stable' if e['static_margin_cal'] > 0 else 'UNSTABLE - needs active control'}).</p>"
+                  f"<p><b>Heating</b> (Sutton-Graves): q&#775; = k &radic;(&rho;/R<sub>n</sub>) v<sup>3</sup>. At 2 km/s and &rho; = 1 g/m<sup>3</sup> with R<sub>n</sub> = {r.nose_radius_m} m: {aero.stagnation_heat_flux(earth, 1e-3, 2000, r.nose_radius_m) / 1e3:.0f} kW/m<sup>2</sup>.</p>"
+                  "<p><i>Model:</i> generic transonic curve, no wind-tunnel data, no flow separation, no shock interaction, no real-gas effects.</p>")
+        elif t.startswith("Structural"):
+            from astrax import structure
+            st = r.stages[0]; H += (f"<p>Each tank section is checked as a thin-walled tube: &sigma; = N/(2&pi;R t) + M/(&pi;R<sup>2</sup> t), N = axial load from the mass above times the acceleration, M = aerodynamic bending moment from the normal force.</p>"
+                  f"<p>{st.name}: {st.material}, wall {st.wall_thickness_mm} mm, shell mass {structure.shell_mass(st):,.0f} kg. Design limits: max-Q {r.limits.max_q_pa / 1e3:.0f} kPa, {r.limits.max_axial_g:.1f} g, nose heating {r.limits.max_heat_flux_w_m2 / 1e3:.0f} kW/m<sup>2</sup>, factor of safety {r.limits.factor_of_safety}.</p>"
+                  "<p><b>Failure modes simulated:</b> aerodynamic overload, axial overload, nose overheating, skin stress reaching yield, and loss of control (unstable vehicle without active control). <b>Not simulated:</b> buckling, fatigue, flutter, slosh, engine failure explosions.</p>"
+                  "<p>Use <i>Rocket designer &rarr; Run survival test</i> to check a design, then <i>Watch in 3D</i> to see it.</p>")
+        elif t == "Changing an orbit":
+            H += ("<p>A burn changes velocity at one point; the orbit then passes through that point again. <b>Prograde</b> burn raises the opposite side of the orbit (apogee), <b>retrograde</b> lowers it; <b>normal</b> burns rotate the orbital plane (inclination); <b>radial</b> burns rotate the line of apsides.</p>"
+                  "<p>Plane change by angle &Delta;i at speed v: &Delta;v = 2 v sin(&Delta;i/2) (pure rotation) - expensive, so do it where v is small. Hohmann: two prograde burns.</p>"
+                  "<p>Open <i>Orbit analysis</i> in the right panel: see how every stage burn changed the orbit, preview a manoeuvre, draw the predicted path in 3D, or apply an ideal impulse.</p>")
         self.view.setHtml(H)

@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QLi
                              QComboBox, QLineEdit, QLabel, QGroupBox, QScrollArea, QFileDialog, QMessageBox, QSplitter, QTableWidget,
                              QTableWidgetItem, QColorDialog, QCheckBox)
 from astrax.rocket import Rocket, Stage, Engine, Nose, default_rocket
+from astrax.structure import MATERIALS
 from astrax.rocket_mesh import build_rocket_parts, export_obj, load_obj
 from ui.viewport import _merge
 
@@ -23,6 +24,7 @@ def dspin(lo, hi, val, dec=2, suffix="", step=None, tip=""):
 class RocketDesigner(QWidget):
     rocket_changed = pyqtSignal(object)       # emitted on every edit (live)
     use_in_simulation = pyqtSignal(object)
+    survival_requested = pyqtSignal()
 
     def __init__(self, rocket=None):
         super().__init__(); self.rocket = copy.deepcopy(rocket or default_rocket()); self._loading = False
@@ -39,7 +41,7 @@ class RocketDesigner(QWidget):
             b = QPushButton(txt); b.setToolTip(tip); b.clicked.connect(fn); row.addWidget(b)
         lv.addLayout(row)
         row = QHBoxLayout()
-        for txt, fn in (("Up", lambda: self.move(-1)), ("Down", lambda: self.move(1))):
+        for txt, fn in (("Up", lambda: self.move_stage(-1)), ("Down", lambda: self.move_stage(1))):
             b = QPushButton(txt); b.clicked.connect(fn); row.addWidget(b)
         lv.addLayout(row)
         io = QGroupBox("Files"); iv = QVBoxLayout(io)
@@ -48,12 +50,13 @@ class RocketDesigner(QWidget):
                              ("Export rocket as OBJ...", self.export_obj, "Open the generated rocket in Blender or any 3D tool")):
             b = QPushButton(txt); b.setToolTip(tip); b.clicked.connect(fn); iv.addWidget(b)
         lv.addWidget(io)
+        sv = QPushButton("Will it survive? Run survival test..."); sv.setToolTip("Fly the design through a full ascent with aerodynamic, structural and thermal checks"); sv.clicked.connect(self.survival_requested.emit); lv.addWidget(sv)
         use = QPushButton("Use this rocket in simulation"); use.setObjectName("primary"); use.clicked.connect(lambda: self.use_in_simulation.emit(copy.deepcopy(self.rocket))); lv.addWidget(use)
         split.addWidget(left)
         # --- centre: preview ---
         mid = QWidget(); mv = QVBoxLayout(mid)
         self.view = gl.GLViewWidget(); self.view.setBackgroundColor(QColor(8, 12, 18)); mv.addWidget(self.view, 1)
-        self.mesh = None; g = gl.GLGridItem(); g.setSize(60, 60); g.setSpacing(5, 5); self.view.addItem(g)
+        self.mesh = None; g = gl.GLGridItem(); g.setSpacing(5, 5); g.setSize(60, 60); self.view.addItem(g)
         self.est_table = QTableWidget(0, 2); self.est_table.setHorizontalHeaderLabels(["Quantity (ESTIMATE)", "Value"]); self.est_table.horizontalHeader().setStretchLastSection(True)
         self.est_table.setMaximumHeight(250); self.est_table.verticalHeader().setVisible(False); mv.addWidget(self.est_table)
         self.warn = QLabel(""); self.warn.setWordWrap(True); mv.addWidget(self.warn)
@@ -72,6 +75,8 @@ class RocketDesigner(QWidget):
         self.nose_shape = QComboBox(); self.nose_shape.addItems(["ogive", "conic", "parabolic", "elliptical", "von_karman"]); f.addRow("Nose shape", self.nose_shape)
         self.nose_len = dspin(0.5, 60, 6, 2, " m"); f.addRow("Nose length", self.nose_len)
         self.nose_mass = dspin(0, 1e5, 0, 1, " kg", 50, "Fairing mass (jettison not modelled; counted as payload side mass)"); f.addRow("Nose/fairing mass", self.nose_mass)
+        self.nose_rn = dspin(0.01, 5, 0.3, 2, " m", 0.05, "Nose-tip radius of curvature: smaller = hotter stagnation point"); f.addRow("Nose tip radius", self.nose_rn)
+        self.active_ctrl = QCheckBox("Active attitude control (TVC / fins)"); self.active_ctrl.setToolTip("If off, an aerodynamically unstable design (CoP above CoM) tumbles"); self.active_ctrl.setChecked(True); f.addRow(self.active_ctrl)
         self.ev.addWidget(g)
         g = QGroupBox("Selected stage"); f = QFormLayout(g); self.stage_group = g
         self.s_name = QLineEdit(); f.addRow("Name", self.s_name)
@@ -84,6 +89,9 @@ class RocketDesigner(QWidget):
         self.s_count = QSpinBox(); self.s_count.setRange(1, 99); f.addRow("Booster copies", self.s_count)
         self.s_sep = QComboBox(); self.s_sep.addItems(["burnout", "time", "manual"]); self.s_sep.setToolTip("When this stage separates"); f.addRow("Separation", self.s_sep)
         self.s_septime = dspin(0, 1e5, 0, 1, " s"); f.addRow("Separation time (MET)", self.s_septime)
+        self.s_mat = QComboBox(); self.s_mat.addItems(MATERIALS.keys()); self.s_mat.setToolTip("Structural material (handbook-order values)"); f.addRow("Material", self.s_mat)
+        self.s_wall = dspin(0.1, 200, 4.0, 2, " mm", 0.5, "Skin/tank wall thickness used by the stress check"); f.addRow("Wall thickness", self.s_wall)
+        self.lbl_shell = QLabel(); f.addRow("Shell mass (est.)", self.lbl_shell)
         self.s_color = QPushButton("Pick colour"); self.s_color.clicked.connect(self._pick_color); f.addRow("Colour", self.s_color)
         self.ev.addWidget(g)
         g = QGroupBox("Engines"); f = QFormLayout(g)
@@ -103,12 +111,19 @@ class RocketDesigner(QWidget):
         self.f_tip = dspin(0.05, 30, 1.0, 2, " m"); f.addRow("Tip chord", self.f_tip)
         self.l_n = QSpinBox(); self.l_n.setRange(0, 8); f.addRow("Landing legs", self.l_n)
         self.l_len = dspin(0.5, 30, 6, 2, " m"); f.addRow("Leg length", self.l_len)
+        self.ev.addWidget(g)
+        g = QGroupBox("Design limits (used by survival test & failure model)"); f = QFormLayout(g)
+        self.lim_q = dspin(1, 500, 60, 1, " kPa", 5, "Dynamic-pressure limit; failure at 1.25x"); f.addRow("Max dynamic pressure", self.lim_q)
+        self.lim_g = dspin(1, 30, 6, 1, " g", 0.5, "Axial load-factor limit; failure at 1.25x"); f.addRow("Max axial acceleration", self.lim_g)
+        self.lim_h = dspin(10, 20000, 1000, 0, " kW/m2", 50, "Nose thermal-protection limit"); f.addRow("Max nose heat flux", self.lim_h)
+        self.lim_fos = dspin(1.0, 3.0, 1.4, 2, "", 0.05, "Factor of safety on yield stress"); f.addRow("Factor of safety", self.lim_fos)
         self.ev.addWidget(g); self.ev.addStretch(1)
-        for w in (self.w_payload, self.w_cd, self.nose_len, self.nose_mass): w.valueChanged.connect(self._global_changed)
+        for w in (self.w_payload, self.w_cd, self.nose_len, self.nose_mass, self.nose_rn, self.lim_q, self.lim_g, self.lim_h, self.lim_fos): w.valueChanged.connect(self._global_changed)
+        self.active_ctrl.toggled.connect(self._global_changed)
         self.nose_shape.currentTextChanged.connect(self._global_changed)
         for w in (self.s_diam, self.s_len, self.s_inter, self.s_dry, self.s_prop, self.s_cap, self.s_count, self.s_septime, self.e_count, self.e_thr, self.e_isp_v, self.e_isp_s,
-                  self.e_nd, self.e_nl, self.f_n, self.f_span, self.f_root, self.f_tip, self.l_n, self.l_len): w.valueChanged.connect(self._stage_changed)
-        for w in (self.s_sep, self.e_place): w.currentTextChanged.connect(self._stage_changed)
+                  self.e_nd, self.e_nl, self.f_n, self.f_span, self.f_root, self.f_tip, self.l_n, self.l_len, self.s_wall): w.valueChanged.connect(self._stage_changed)
+        for w in (self.s_sep, self.e_place, self.s_mat): w.currentTextChanged.connect(self._stage_changed)
         self.s_name.textChanged.connect(self._stage_changed)
 
     # ---------------- model <-> widgets ----------------
@@ -131,7 +146,7 @@ class RocketDesigner(QWidget):
         e = s.engine; self.e_count.setValue(e.count); self.e_place.setCurrentText(e.placement); self.e_thr.setValue(e.thrust_vac_n); self.e_isp_v.setValue(e.isp_vac_s); self.e_isp_s.setValue(e.isp_sl_s)
         self.e_nd.setValue(e.nozzle_diameter_m); self.e_nl.setValue(e.nozzle_length_m)
         self.f_n.setValue(s.fin_count); self.f_span.setValue(s.fin_span_m); self.f_root.setValue(s.fin_root_chord_m); self.f_tip.setValue(s.fin_tip_chord_m)
-        self.l_n.setValue(s.leg_count); self.l_len.setValue(s.leg_length_m); self._loading = False; self._update_labels()
+        self.l_n.setValue(s.leg_count); self.l_len.setValue(s.leg_length_m); self.s_mat.setCurrentText(s.material); self.s_wall.setValue(s.wall_thickness_mm); self._loading = False; self._update_labels()
 
     def _stage_changed(self, *_):
         s = self._cur()
@@ -142,7 +157,7 @@ class RocketDesigner(QWidget):
         e = s.engine; e.count = self.e_count.value(); e.placement = self.e_place.currentText(); e.thrust_vac_n = self.e_thr.value(); e.isp_vac_s = self.e_isp_v.value(); e.isp_sl_s = self.e_isp_s.value()
         e.nozzle_diameter_m = self.e_nd.value(); e.nozzle_length_m = self.e_nl.value()
         s.fin_count = self.f_n.value(); s.fin_span_m = self.f_span.value(); s.fin_root_chord_m = self.f_root.value(); s.fin_tip_chord_m = self.f_tip.value()
-        s.leg_count = self.l_n.value(); s.leg_length_m = self.l_len.value()
+        s.leg_count = self.l_n.value(); s.leg_length_m = self.l_len.value(); s.material = self.s_mat.currentText(); s.wall_thickness_mm = self.s_wall.value()
         self.nose_changed_diameter(); self._changed(rebuild_list=True)
 
     def nose_changed_diameter(self):
@@ -153,6 +168,8 @@ class RocketDesigner(QWidget):
         if self._loading: return
         r = self.rocket; r.name = self.name_edit.text(); r.payload_mass_kg = self.w_payload.value(); r.cd = self.w_cd.value()
         r.nose.shape = self.nose_shape.currentText(); r.nose.length_m = self.nose_len.value(); r.nose.mass_kg = self.nose_mass.value()
+        r.nose_radius_m = self.nose_rn.value(); r.active_control = self.active_ctrl.isChecked()
+        L = r.limits; L.max_q_pa = self.lim_q.value() * 1e3; L.max_axial_g = self.lim_g.value(); L.max_heat_flux_w_m2 = self.lim_h.value() * 1e3; L.factor_of_safety = self.lim_fos.value()
         self._changed()
 
     def _pick_color(self):
@@ -164,6 +181,9 @@ class RocketDesigner(QWidget):
     def _update_labels(self):
         s = self._cur()
         self.lbl_area.setText(f"{self.rocket.reference_area_m2:.2f} m^2  (from diameter)")
+        if s:
+            from astrax.structure import shell_mass
+            self.lbl_shell.setText(f"{shell_mass(s):,.0f} kg (dry mass {s.dry_mass_kg:,.0f} kg)")
         if s: self.lbl_mdot.setText(f"{s.engine.mdot:,.1f} kg/s total (derived from thrust & Isp)")
 
     def _changed(self, rebuild_list=False):
@@ -206,14 +226,15 @@ class RocketDesigner(QWidget):
         r = self.list.currentRow()
         if len(self.rocket.stages) > 1 and r >= 0: del self.rocket.stages[r]; self._changed(True)
 
-    def move(self, d):
+    def move_stage(self, d):
         r = self.list.currentRow(); n = r + d
         if 0 <= n < len(self.rocket.stages): st = self.rocket.stages; st[r], st[n] = st[n], st[r]; self._changed(True); self.list.setCurrentRow(n)
 
     def set_rocket(self, rocket):
         self.rocket = copy.deepcopy(rocket); self._loading = True; self.name_edit.setText(rocket.name)
         self.w_payload.setValue(rocket.payload_mass_kg); self.w_cd.setValue(rocket.cd); self.nose_shape.setCurrentText(rocket.nose.shape)
-        self.nose_len.setValue(rocket.nose.length_m); self.nose_mass.setValue(rocket.nose.mass_kg); self._loading = False
+        self.nose_len.setValue(rocket.nose.length_m); self.nose_mass.setValue(rocket.nose.mass_kg); self.nose_rn.setValue(rocket.nose_radius_m); self.active_ctrl.setChecked(rocket.active_control)
+        L = rocket.limits; self.lim_q.setValue(L.max_q_pa / 1e3); self.lim_g.setValue(L.max_axial_g); self.lim_h.setValue(L.max_heat_flux_w_m2 / 1e3); self.lim_fos.setValue(L.factor_of_safety); self._loading = False
         self._refresh_list(); self.list.setCurrentRow(0); self._changed()
 
     def save(self):

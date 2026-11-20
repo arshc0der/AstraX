@@ -63,3 +63,6 @@ compile_commands.json
 *creator.user*
 
 *_qmlcache.qrc
+logs/
+*.astrax.json
+__pycache__/

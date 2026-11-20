@@ -1,4 +1,12 @@
 # Changelog
+## 3.1.0-dev
+* Aerodynamics: Mach-dependent drag, angle-of-attack normal force, Sutton-Graves heating, speed of sound.
+* Structure & survival: materials, wall thickness, design limits, failure model (overload, overheating, yield, loss of control), autopilot load protection, **survival test** with verdict, margins and 3D replay.
+* Emergencies: abort with parachute capsule, engine-out, propellant leak, stuck throttle, guidance loss.
+* Animation: engine plume, launch pad, launch camera, jettisoned-stage debris, explosion and fragments, on-screen banners.
+* Orbit analysis: orbit log per event, maneuver planner (preview / predicted path / impulse), Hohmann helper.
+* Windows & customisation: extra 3D views and graph windows, themes, font size, settings dialog.
+* Tests: 30 -> 46.
 ## 3.0.0-dev
 * New `astrax/` headless engine (N-body, RK4/DOPRI5/Verlet, variable mass, atmosphere+drag, staging, flight plans, recorder, reports) - 30 tests.
 * New PyQt6 UI: dockable workspaces, rocket designer with procedural 3D rocket, planet inspector, mission control, telemetry/analysis, education, GIF/MP4 recording, logging.

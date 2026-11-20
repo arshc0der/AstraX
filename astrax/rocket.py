@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy, json, math
 from dataclasses import dataclass, field, asdict
 from .constants import G0
+from .structure import Limits, MATERIALS, shell_mass
 
 
 @dataclass
@@ -54,6 +55,8 @@ class Stage:
     color: tuple = (0.92, 0.92, 0.95, 1.0)
     booster_count: int = 1              # only for kind == booster (identical strap-ons)
     cd: float = 0.0                     # 0 -> use rocket-level Cd
+    material: str = "Al-Li 2195"         # structural material (see structure.MATERIALS)
+    wall_thickness_mm: float = 4.0       # tank/skin wall thickness used by the stress check
 
     @property
     def capacity(self): return self.propellant_capacity_kg or self.propellant_kg
@@ -78,6 +81,9 @@ class Rocket:
     nose: Nose = field(default_factory=Nose)
     cd: float = 0.35                    # reference drag coefficient (user editable)
     custom_mesh_path: str = ""          # optional OBJ model used for display only
+    nose_radius_m: float = 0.3          # nose-tip radius of curvature for stagnation heating
+    active_control: bool = True         # TVC/fins keep attitude; if False an unstable vehicle tumbles
+    limits: Limits = field(default_factory=Limits)
     notes: str = ""
 
     # ---------- structure helpers ----------
@@ -149,7 +155,14 @@ class Rocket:
             Ixx += m * (3 * r * r + L * L) / 12 + m * (z - zc) ** 2 + m * off * off / 2
         return Ixx, Izz
 
+    def cn_alpha(self):
+        """Normal-force slope CN_alpha (per radian) from the simplified Barrowman sum."""
+        return self._barrowman()[0]
+
     def center_of_pressure(self):
+        return self._barrowman()[1]
+
+    def _barrowman(self):
         """Simplified Barrowman estimate (nose + body + first-stage fins), m from base."""
         D = self.diameter_m; Ln = self.nose.length_m
         z_nose_base = self.total_height_m - Ln
@@ -166,7 +179,7 @@ class Rocket:
                 xf_le = (Cr - Ct) * (Cr + 2 * Ct) / (3 * (Cr + Ct)) + (Cr + Ct - Cr * Ct / (Cr + Ct)) / 6
                 xf = zb + (Cr - Cr) + xf_le   # fin root leading edge assumed at stage base
                 num += cnf * xf; den += cnf
-        return num / den
+        return den, num / den
 
     def estimates(self):
         """Analytic ESTIMATES (not simulation results)."""
@@ -234,6 +247,8 @@ class Rocket:
             if s.propellant_kg > s.capacity + 1e-6: w.append(f"{s.name}: propellant exceeds capacity.")
             if s.dry_mass_kg <= 0: w.append(f"{s.name}: dry mass must be positive.")
             if s.engine.isp_vac_s < s.engine.isp_sl_s: w.append(f"{s.name}: vacuum Isp should be >= sea-level Isp.")
+        for s in self.stages:
+            if shell_mass(s) > 0.8 * s.dry_mass_kg: w.append(f"{s.name}: wall thickness implies a {shell_mass(s):,.0f} kg shell, close to/above the dry mass - raise dry mass or thin the wall.")
         e = self.estimates() if self.cores else None
         if e and e["twr_sl"] < 1.0: w.append(f"Launch T/W = {e['twr_sl']:.2f} < 1: vehicle cannot lift off from Earth.")
         return w
@@ -249,9 +264,10 @@ class Rocket:
             eng = Engine(**sd.pop("engine", {}))
             sd["color"] = tuple(sd.get("color", (0.92, 0.92, 0.95, 1.0)))
             stages.append(Stage(engine=eng, **sd))
+        lim = Limits(**d.pop("limits", {}))
         nd = d.pop("nose", {}); nd["color"] = tuple(nd.get("color", (0.95, 0.95, 0.98, 1.0)))
         nose = Nose(**nd)
-        return Rocket(stages=stages, nose=nose, **d)
+        return Rocket(stages=stages, nose=nose, limits=lim, **d)
 
     def save(self, path):
         with open(path, "w", encoding="utf-8") as f:

@@ -79,7 +79,7 @@ class MissionPanel(QWidget):
         for i in range(self.table.rowCount()):
             g = lambda j: self.table.item(i, j).text()
             old = self.plan[i] if i < len(self.plan) else Phase()
-            out.append(Phase(g(0), g(1), float(g(2)), float(g(3)), float(g(4)), old.pitch_table, g(5), old.target_alt_m, json.loads(g(6) or "{}")))
+            out.append(Phase(g(0), g(1), float(g(2)), float(g(3)), float(g(4)), old.pitch_table, g(5), old.target_alt_m, json.loads(g(6) or "{}"), old.q_limit_pa))
         return out
 
     def launch_config(self):

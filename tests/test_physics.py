@@ -12,6 +12,8 @@ from astrax.missions import earth_leo
 from astrax.recorder import Recorder, save_report
 from astrax import project, atmosphere
 from astrax.runtime import MissionRuntime
+from astrax import aero, structure
+from astrax.survival import run_survival_test
 
 
 class TestOrbital(unittest.TestCase):
@@ -115,7 +117,7 @@ class TestSimulation(unittest.TestCase):
         r0 = sim.radii[sim.li] + 400e3; v = np.linalg.norm(sim.rv - sim.bv[sim.li])
         self.assertAlmostEqual(v, math.sqrt(1.5 * 3.986004418e14 / r0), delta=1.0)
     def test_free_fall_hits_surface(self):
-        sim = Simulation(launch=LaunchConfig(start_mode="orbit", orbit_altitude_m=100e3), config=SimConfig(dt_mode="auto"))
+        sim = Simulation(launch=LaunchConfig(start_mode="orbit", orbit_altitude_m=100e3), config=SimConfig(dt_mode="auto", failures=False))
         sim.rv = sim.bv[sim.li].copy(); sim.rocket.cd = 0.0     # drop from rest, no drag
         sim.advance(2000); self.assertEqual(sim.status, "CRASHED")
     def test_rocket_equation_in_simulation(self):
@@ -168,6 +170,90 @@ class TestRuntime(unittest.TestCase):
         self.assertFalse(rt.compile_script("import os\ndef mission_loop():\n    pass\n"))     # imports blocked
     def test_script_without_loop_rejected(self):
         sim = Simulation(); self.assertFalse(MissionRuntime(sim, lambda m: None).compile_script("x = 1"))
+
+
+def _ascent(rocket=None, steps_until=None, **cfg):
+    L, plan = earth_leo(200e3, 6.0); sim = Simulation(rocket=rocket, launch=L, plan=plan, config=SimConfig(dt_mode="auto", **cfg)); return sim
+
+
+class TestAeroAndSafety(unittest.TestCase):
+    def test_speed_of_sound_and_cd_curve(self):
+        e = SolarSystem().get("Earth")
+        self.assertAlmostEqual(aero.speed_of_sound(e, 0), 340.3, delta=0.5); self.assertAlmostEqual(aero.speed_of_sound(e, 11000), 295.1, delta=0.5)
+        self.assertGreater(aero.cd_factor(1.1), aero.cd_factor(0.3)); self.assertGreater(aero.cd_factor(1.1), aero.cd_factor(4.0))   # transonic peak
+    def test_sutton_graves_scaling(self):
+        e = SolarSystem().get("Earth"); a = aero.stagnation_heat_flux(e, 1e-3, 2000, 0.3)
+        self.assertAlmostEqual(aero.stagnation_heat_flux(e, 1e-3, 4000, 0.3) / a, 8.0, places=6)       # ~ v^3
+        self.assertAlmostEqual(aero.stagnation_heat_flux(e, 4e-3, 2000, 0.3) / a, 2.0, places=6)       # ~ sqrt(rho)
+    def test_shell_stress_hand_calc(self):
+        from astrax.rocket import Stage
+        st = Stage(diameter_m=2.0, wall_thickness_mm=5.0); sig = structure.shell_stress(st, 1e6, 0.0)
+        self.assertAlmostEqual(sig, 1e6 / (2 * math.pi * 1.0 * 0.005), places=3)
+    def test_default_rocket_survives_ascent(self):
+        sim = _ascent(); last = len(sim.plan) - 1
+        while sim.met < 1800 and not sim.terminal() and sim.phase_idx < last: sim.step()
+        self.assertEqual(sim.status, "FLYING"); self.assertLess(sim.peak["g_ratio"], 1.0); self.assertLess(sim.peak["q_ratio"], 1.0)
+    def test_survival_report_cases(self):
+        self.assertTrue(run_survival_test(default_rocket()).survived)
+        thin = default_rocket()
+        for s in thin.stages: s.wall_thickness_mm = 0.5
+        r = run_survival_test(thin); self.assertEqual(r.verdict, "LOST"); self.assertIn("structural", r.reason)
+        weak = default_rocket(); weak.stages[0].engine.count = 1; self.assertEqual(run_survival_test(weak).verdict, "NO_LIFTOFF")
+        unstable = default_rocket(); unstable.active_control = False; self.assertEqual(run_survival_test(unstable).verdict, "LOST")
+    def test_overload_without_protection_destroys(self):
+        r = default_rocket(); r.limits.max_q_pa = 15e3
+        self.assertEqual(run_survival_test(r, protect=False).verdict, "LOST")
+    def test_breakup_creates_debris_and_ends_run(self):
+        thin = default_rocket()
+        for s in thin.stages: s.wall_thickness_mm = 0.5
+        sim = _ascent(thin)
+        while not sim.terminal() and sim.met < 300: sim.step()
+        self.assertEqual(sim.status, "DESTROYED"); self.assertGreater(len(sim.debris), 20); self.assertTrue(sim.failure_reason)
+    def test_engine_out_reduces_thrust(self):
+        sim = _ascent(); f0 = sim.engine_params(1.0)[0]; sim.emergency("engine_out"); self.assertAlmostEqual(sim.engine_params(1.0)[0] / f0, 8 / 9, places=9)
+    def test_fuel_leak_loses_mass(self):
+        sim = _ascent(); sim.emergency("fuel_leak", 500.0)
+        for _ in range(200): sim.step(0.1)
+        self.assertLess(sim.stages[0].propellant_kg, 395700 - 500 * 15)   # leak + burn both drained propellant
+        self.assertLess(sim.m, sim.rocket.total_mass())
+    def test_abort_capsule_lands_safely(self):
+        sim = _ascent(); sim.cfg.dt_mode = "auto"
+        while sim.met < 40 and not sim.terminal(): sim.step()
+        sim.abort(); self.assertTrue(sim.capsule)
+        for _ in range(200000):
+            if sim.terminal(): break
+            sim.step()
+        self.assertEqual(sim.status, "LANDED"); self.assertTrue(sim.chute_open)
+    def test_stage_debris_falls_back(self):
+        sim = _ascent(); last = len(sim.plan) - 1
+        while sim.phase_idx < 3 and not sim.terminal(): sim.step()
+        self.assertTrue(any(d["kind"] == "stage" for d in sim.debris))
+        n_alive = lambda: sum(d["alive"] for d in sim.debris)
+        sim.cfg.failures = False
+        while sim.met < 1500 and n_alive() > 0 and sim.status == "FLYING": sim.step()
+        self.assertTrue(any("impact" in m for _, m in sim.events))
+
+
+class TestOrbitTools(unittest.TestCase):
+    def _leo(self):      # equatorial start: the starting point is a node, so a normal burn is a pure plane change
+        return Simulation(launch=LaunchConfig(start_mode="orbit", orbit_altitude_m=400e3, lat_deg=0.0, lon_deg=0.0), config=SimConfig(dt_mode="auto"))
+    def test_prograde_burn_matches_hohmann_apoapsis(self):
+        sim = self._leo(); mu = sim.gm[sim.li]; r1 = sim.radii[sim.li] + 400e3; r2 = r1 + 600e3
+        dv = orbital.hohmann(mu, r1, r2)["dv1"]; out = sim.maneuver_preview(dv_pro=dv)
+        self.assertAlmostEqual(out["after"]["apo_alt"], 1000e3, delta=500.0); self.assertAlmostEqual(out["after"]["peri_alt"], 400e3, delta=500.0)
+    def test_normal_burn_changes_inclination_only(self):
+        sim = self._leo(); v = math.sqrt(sim.gm[sim.li] / (sim.radii[sim.li] + 400e3)); out = sim.maneuver_preview(dv_norm=v * math.tan(math.radians(5)))
+        self.assertAlmostEqual(out["after"]["inc"] - out["before"]["inc"], 5.0, delta=0.05)
+    def test_predict_returns_closed_orbit_without_touching_sim(self):
+        sim = self._leo(); t0 = sim.t; r0 = sim.rp.copy(); T = 2 * math.pi * math.sqrt((sim.radii[sim.li] + 400e3) ** 3 / sim.gm[sim.li])
+        pts, body = sim.predict(T, 120); self.assertEqual(body, "Earth"); self.assertEqual(sim.t, t0); self.assertTrue((sim.rp == r0).all())
+        self.assertLess(np.linalg.norm(pts[-1] - pts[0]), 20e3)                                    # returns near start after one period
+    def test_apply_impulse_changes_orbit(self):
+        sim = self._leo(); a0 = sim.telemetry()["sma_m"]; sim.apply_impulse(dv_pro=100.0); self.assertGreater(sim.telemetry()["sma_m"], a0 + 1e5)
+    def test_orbit_log_recorded_on_events(self):
+        sim = _ascent(); last = len(sim.plan) - 1
+        while sim.phase_idx < last and not sim.terminal(): sim.step()
+        self.assertGreater(len(sim.orbit_log), 4); self.assertTrue(any("separation" in e["label"] for e in sim.orbit_log))
 
 
 if __name__ == "__main__":

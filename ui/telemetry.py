@@ -15,7 +15,9 @@ VARS = [("altitude_m", "Altitude", 1e3, "km"), ("speed_mps", "Velocity (vs domin
         ("specific_energy_jkg", "Specific orbital energy", 1e6, "MJ/kg"), ("kinetic_j", "Kinetic energy", 1e9, "GJ"), ("potential_j", "Potential energy", 1e9, "GJ"),
         ("dist_target_m", "Distance from destination", 1e3, "km"), ("dist_sun_m", "Distance from Sun", 1.495978707e11, "AU"),
         ("apoapsis_alt_m", "Apoapsis altitude", 1e3, "km"), ("periapsis_alt_m", "Periapsis altitude", 1e3, "km"), ("ecc", "Eccentricity", 1.0, ""),
-        ("dv_spent_mps", "Delta-v spent", 1.0, "m/s"), ("gravity_force_dominant_n", "Gravitational force (dominant)", 1e3, "kN")]
+        ("dv_spent_mps", "Delta-v spent", 1.0, "m/s"), ("gravity_force_dominant_n", "Gravitational force (dominant)", 1e3, "kN"),
+        ("mach", "Mach number", 1.0, ""), ("aoa_deg", "Angle of attack", 1.0, "deg"), ("heat_flux_w_m2", "Nose heat flux", 1e3, "kW/m^2"),
+        ("stress_mpa", "Peak skin stress", 1.0, "MPa"), ("drag_n", "Aerodynamic drag", 1e3, "kN"), ("axial_g", "Axial load factor", 1.0, "g")]
 
 
 class TelemetryPanel(QWidget):
