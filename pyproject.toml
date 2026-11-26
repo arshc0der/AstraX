@@ -32,7 +32,7 @@ dependencies = [
   "PyQt6>=6.5",
   "pyqtgraph>=0.13.3",
   "numpy>=1.24",
-  "PyOpenGL>=3.1.7",
+  "PyOpenGL>=3.1.10",
   "Pillow>=10.0",
 ]
 
