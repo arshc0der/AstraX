@@ -37,8 +37,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-report = ["matplotlib>=3.7"]
-dev = ["ruff>=0.5", "pre-commit>=3.5", "matplotlib>=3.7"]
+report = ["matplotlib>=3.10.9"]
+dev = ["ruff>=0.5", "pre-commit>=3.5", "matplotlib>=3.10.9"]
 build = ["pyinstaller>=6.0"]
 branding = ["playwright>=1.40"]
 all = ["astrax[report,dev,build,branding]"]
