@@ -1,0 +1,6 @@
+documentation: ["docs/**", "*.md"]
+physics: ["astrax/**"]
+ui: ["ui/**"]
+tests: ["tests/**"]
+ci: [".github/**", "tools/**"]
+assets: ["assets/**"]

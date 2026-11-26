@@ -1,0 +1,26 @@
+name: Test report (manual testing)
+description: Report results of the manual test suite for a release candidate
+labels: ["testing"]
+body:
+  - type: input
+    id: build
+    attributes: { label: Build tested, placeholder: "4.0.0 / release candidate / commit hash" }
+    validations: { required: true }
+  - type: input
+    id: env
+    attributes: { label: Environment, placeholder: "Windows 11, Python 3.12, NVIDIA RTX 3050 + Intel UHD" }
+    validations: { required: true }
+  - type: dropdown
+    id: suite
+    attributes: { label: Suite run, options: [Smoke (10 min), Full manual suite, Regression, Exploratory charter, Performance, Compatibility], multiple: true }
+    validations: { required: true }
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: List test-case IDs from docs/tester/MANUAL_TEST_CASES.md with PASS / FAIL / BLOCKED.
+      placeholder: "TC-001 PASS\nTC-002 PASS\nTC-014 FAIL - survival dialog stays empty (issue #123)"
+    validations: { required: true }
+  - type: textarea
+    id: notes
+    attributes: { label: Observations / exploratory notes }

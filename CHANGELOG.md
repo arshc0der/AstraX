@@ -1,4 +1,24 @@
 # Changelog
+
+All notable changes to this project are documented here. Format based on [Keep a Changelog](https://keepachangelog.com/); versions follow [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+- _nothing yet_
+
+## 4.0.0 - 2026-11-21
+**"Foundation": professional repository release. No change to simulation or UI behaviour compared with 3.2.1.**
+### Added
+- Professional `README.md` (badges, gallery, features, validation table, architecture diagram, citation).
+- Documentation for users, testers and developers: INSTALLATION, KEYBOARD_SHORTCUTS, GLOSSARY, TROUBLESHOOTING, EDUCATORS; tester hub with 140 generated manual test cases (+CSV), smoke test, regression checklist, exploratory charters, performance/compatibility/test-data/known-issues/release docs; developer hub with coding standards, adding-physics guide, debugging, CI/CD, packaging, release process, documentation guide and ADR log.
+- Community files: CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, SUPPORT, GOVERNANCE, MAINTAINERS, ROADMAP, AUTHORS, THIRD_PARTY_NOTICES, CITATION.cff.
+- GitHub setup: issue forms (bug, feature, test report, docs), PR template, CODEOWNERS, Dependabot, labeler, stale bot, CodeQL, CI (lint, tests on 3 OS x 3 Python, UI import smoke, docs checks) and a release workflow (PyInstaller builds, checksums, notes).
+- `pyproject.toml`, `Makefile`, `.editorconfig`, `.gitattributes`, `.pre-commit-config.yaml`, `MANIFEST.in`.
+- Tools: `--diagnostics` flag, `tools/benchmark.py`, `check_docs_links.py`, `check_screenshots.py`, `gen_test_cases.py`, `release_notes.py`, `set_repo_slug.py`.
+- Screenshot placeholders (`docs/screenshots/`), social preview image and banner.
+- Repository health tests (`tests/test_repo_health.py`).
+### Changed
+- Version 4.0.0; documentation index reorganised by audience.
+
 ## 3.2.1-dev
 * **GPU/CPU selection:** detect GPUs; Auto/GPU/CPU rendering; prefer high-performance GPU (Windows registry preference, Linux PRIME); `--gpu-info`, `--gpu`, `--cpu`; status-bar renderer display; hint when a GPU exists but the CPU renders.
 * **Lag fixes:** snapshot back-pressure, one-time orbit-line upload, ring-buffer trail, visible-tab-only graph redraws, shorter physics slices, GIL switch interval, Performance quality mode, refresh-rate cap, `UI ms` indicator.

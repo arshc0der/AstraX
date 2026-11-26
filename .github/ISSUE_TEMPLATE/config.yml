@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question / share your work (Discussions)
+    url: https://github.com/arshc0der/AstraX/discussions
+    about: Questions, ideas, show-and-tell. Please use Discussions instead of issues for usage questions.
+  - name: Security vulnerability (private)
+    url: https://github.com/arshc0der/AstraX/security/advisories/new
+    about: Please do not open public issues for security problems.
+  - name: Documentation and FAQ
+    url: https://github.com/arshc0der/AstraX/tree/main/docs
+    about: Read the docs first - many answers are in the Troubleshooting guide.

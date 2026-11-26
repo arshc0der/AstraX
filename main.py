@@ -1,4 +1,4 @@
-"""AstraX entry point:  python main.py [--no-splash]"""
+"""AstraX entry point:  python main.py [--no-splash] [--gpu | --cpu] [--gpu-info] [--diagnostics]"""
 import os, sys, threading, time
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -13,6 +13,8 @@ def _preload():
 
 
 def main():
+    if "--diagnostics" in sys.argv:                    # system report for bug reports (no window)
+        from tools.diagnostics import run; run(); return
     from ui import gpu
     if "--gpu-info" in sys.argv:                       # diagnostics without opening any window
         g = gpu.detect_gpus(); print("Detected GPUs:"); [print(f"  - {x['name']} ({x['kind']})") for x in g] or print("  none"); print("Auto would choose:", gpu.choose_backend("auto", g)); return

@@ -1,0 +1,65 @@
+name: Bug report
+description: Something does not work as documented
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! First run **`python main.py --diagnostics`** and paste the output below. Please check [Troubleshooting](../../tree/main/docs/TROUBLESHOOTING.md) and search existing issues.
+  - type: input
+    id: version
+    attributes: { label: AstraX version, placeholder: "4.0.0 (Help > About)" }
+    validations: { required: true }
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows 11, Windows 10, Ubuntu / Debian, Fedora / other Linux, macOS (Apple Silicon), macOS (Intel), Other]
+    validations: { required: true }
+  - type: input
+    id: python
+    attributes: { label: Python version, placeholder: "3.12.4" }
+    validations: { required: true }
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Startup / splash, 3D viewport, Rocket designer, Survival test, Physics / numerics, Flight plan / guidance, Telemetry / graphs, Planet inspector, Launch windows, Studies / challenges, Flight safety / abort, Graphics / GPU / performance, Save / load / export, Docs, Other]
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes: { label: What happened?, description: Include what you expected instead. }
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations: { required: true }
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Impact
+      options: [Crash / data loss, Feature unusable, Wrong result, Visual glitch, Performance / lag, Minor / cosmetic]
+    validations: { required: true }
+  - type: textarea
+    id: diagnostics
+    attributes: { label: Output of `python main.py --diagnostics`, render: text }
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes: { label: Traceback / log excerpt (logs/ folder), render: text }
+  - type: textarea
+    id: files
+    attributes: { label: Attach screenshots, scenario/rocket JSON files, or a screen recording, description: Drag and drop files here. }
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues
+          required: true
+        - label: I can reproduce this on the latest release

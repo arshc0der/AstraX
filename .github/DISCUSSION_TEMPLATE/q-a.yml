@@ -1,0 +1,6 @@
+title: "[Q&A] "
+labels: ["question"]
+body:
+  - type: textarea
+    attributes: { label: Your question, description: "What are you trying to do? What have you tried? (Include your OS and AstraX version.)" }
+    validations: { required: true }

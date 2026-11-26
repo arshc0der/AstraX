@@ -66,3 +66,15 @@ compile_commands.json
 logs/
 *.astrax.json
 __pycache__/
+venv/
+.venv/
+dist/
+build/
+*.egg-info/
+*.spec
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+diagnostics.txt
+.DS_Store
+Thumbs.db

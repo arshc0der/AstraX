@@ -57,12 +57,12 @@ Atmosphere(surface_pressure_pa: 'float', surface_density: 'float', scale_height_
 
 | field | type | default |
 |---|---|---|
-| `surface_pressure_pa` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `surface_density` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `scale_height_m` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `top_altitude_m` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `composition` | `str` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `surface_temp_k` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
+| `surface_pressure_pa` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `surface_density` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `scale_height_m` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `top_altitude_m` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `composition` | `str` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `surface_temp_k` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
 
 
 ### class `Body`
@@ -71,12 +71,12 @@ Body(name: 'str', gm: 'float', radius_m: 'float', color: 'tuple', rotation_perio
 
 | field | type | default |
 |---|---|---|
-| `name` | `str` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `gm` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `radius_m` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `color` | `tuple` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `rotation_period_s` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `axial_tilt_deg` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
+| `name` | `str` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `gm` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `radius_m` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `color` | `tuple` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `rotation_period_s` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `axial_tilt_deg` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
 | `parent` | `str | None` | `None` |
 | `a` | `float` | `0.0` |
 | `e` | `float` | `0.0` |
@@ -112,10 +112,10 @@ ChallengeResult(name: 'str', passed: 'bool', score: 'float', message: 'str', sim
 
 | field | type | default |
 |---|---|---|
-| `name` | `str` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `passed` | `bool` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `score` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `message` | `str` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
+| `name` | `str` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `passed` | `bool` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `score` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `message` | `str` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
 | `sim` | `object` | `None` |
 
 
@@ -278,15 +278,15 @@ EntryResult(peak_decel_g: 'float', peak_decel_alt_m: 'float', peak_heat_flux_w_m
 
 | field | type | default |
 |---|---|---|
-| `peak_decel_g` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `peak_decel_alt_m` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `peak_heat_flux_w_m2` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `peak_heat_alt_m` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `heat_load_j_m2` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `impact_speed_mps` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `duration_s` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `reached_surface` | `bool` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `path` | `np.ndarray` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
+| `peak_decel_g` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `peak_decel_alt_m` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `peak_heat_flux_w_m2` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `peak_heat_alt_m` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `heat_load_j_m2` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `impact_speed_mps` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `duration_s` | `float` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `reached_surface` | `bool` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `path` | `np.ndarray` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
 
 
 ### `entry(body, mass_kg, cd, area_m2, nose_radius_m, speed_mps, gamma_deg, entry_alt_m=None, dt=0.05, max_t=3000.0) -> 'EntryResult'`
@@ -430,10 +430,10 @@ Part(name: 'str', vertices: 'np.ndarray', faces: 'np.ndarray', color: 'tuple')
 
 | field | type | default |
 |---|---|---|
-| `name` | `str` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `vertices` | `np.ndarray` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `faces` | `np.ndarray` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
-| `color` | `tuple` | `<dataclasses._MISSING_TYPE object at 0x7f7885f3e870>` |
+| `name` | `str` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `vertices` | `np.ndarray` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `faces` | `np.ndarray` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
+| `color` | `tuple` | `<dataclasses._MISSING_TYPE object at 0x7f596b15e870>` |
 
 
 ### `build_rocket_parts(rocket, fuel_fractions=None) -> 'list'`

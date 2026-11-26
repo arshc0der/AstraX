@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use AstraX in research, teaching material or publications, please cite it as below."
+title: "AstraX: an open-source spaceflight simulation laboratory"
+type: software
+version: 4.0.0
+date-released: 2026-11-21
+license: MIT
+repository-code: "https://github.com/arshc0der/AstraX"
+authors:
+  - name: "Arsh and the AstraX contributors"
+keywords:
+  - spaceflight
+  - orbital mechanics
+  - rocket design
+  - simulation
+  - education
+abstract: >-
+  AstraX is a desktop simulation laboratory for rocket design, launch simulation, survival testing, orbit analysis and
+  interplanetary launch-window planning. Results come from simplified, documented models and are not validated mission predictions.

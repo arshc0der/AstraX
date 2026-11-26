@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest an idea or improvement
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes: { label: What problem would this solve?, description: Describe your use case (teaching, research, design...). }
+    validations: { required: true }
+  - type: textarea
+    id: solution
+    attributes: { label: Proposed solution }
+    validations: { required: true }
+  - type: textarea
+    id: alternatives
+    attributes: { label: Alternatives considered }
+  - type: dropdown
+    id: audience
+    attributes: { label: Who benefits?, options: [Students / educators, Hobbyists, Researchers, Engineers, Developers / contributors, Everyone], multiple: true }
+  - type: textarea
+    id: science
+    attributes: { label: Scientific references (if it is a model), description: Equations, papers, datasets with units and epoch. }
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contribution
+      options:
+        - label: I would like to work on this myself
